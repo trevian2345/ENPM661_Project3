@@ -53,15 +53,17 @@ class ObstacleMap:
         # Lower-right rhombus
         points = [[225, 160], [250, 175], [225, 190], [200, 175]]
         self.obstacles.append(points)
-        #
-        # # Define upper-right circle
-        # shape_image = np.array([[1 if (col - 225) ** 2 + (row - 50) ** 2 < 25 ** 2 else 0
-        #                          for col in range(self.width)] for row in range(self.height)], dtype=np.uint8)
-        #
-        # # Define middle ellipse
-        # shape_image = np.array([[1 if (col - 150) ** 2 + ((row - 100) * 2) ** 2 < 40 ** 2 else 0
-        #                          for col in range(self.width)] for row in range(self.height)], dtype=np.uint8)
-        #
+
+        # Upper-right circle
+        steps = 20
+        points = [[225 + 25*cos(2*pi*t/steps), 50 + 25*sin(2*pi*t/steps)] for t in range(steps)]
+        self.obstacles.append(points)
+
+        # Middle ellipse
+        points = [[150 + 40*cos(2*pi*t/steps), 100 + 20*sin(2*pi*t/steps)] for t in range(steps)]
+        self.obstacles.append(points)
+
+        # Create visualization
         obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
                                    for row in range(self.height)], dtype=np.uint8)
         self.show(obstacle_image)
