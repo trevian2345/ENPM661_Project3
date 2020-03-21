@@ -55,12 +55,11 @@ class ObstacleMap:
         self.obstacles.append(points)
 
         # Upper-right circle
-        steps = 20
-        points = [[225 + 25*cos(2*pi*t/steps), 50 + 25*sin(2*pi*t/steps)] for t in range(steps)]
+        points = [[225, 50, 25, 25]]
         self.obstacles.append(points)
 
         # Middle ellipse
-        points = [[150 + 40*cos(2*pi*t/steps), 100 + 20*sin(2*pi*t/steps)] for t in range(steps)]
+        points = [[150, 100, 40, 20]]
         self.obstacles.append(points)
 
         # Create visualization
@@ -79,22 +78,25 @@ class ObstacleMap:
         """
         ry, rx = point
         for i in range(len(self.obstacles)):
-            direction = 0.0
-            collision = True
-            for j in range(len(self.obstacles[i]) + 1):
-                vx, vy = self.obstacles[i][(j+1) % len(self.obstacles[i])]
-                new_direction = atan2(vy - ry, vx - rx)
-                new_direction = new_direction if new_direction >= 0.0 else (new_direction + 2.0 * pi)
-                difference = new_direction - direction
-                difference = difference if difference >= -pi else difference + 2.0 * pi
-                difference = difference if difference <= pi else difference - 2.0 * pi
-                # print(self.obstacles[i][j], [rx, ry], int(direction*180/pi), int(new_direction*180/pi), int(difference*180/pi))
-                direction = new_direction
-                if j > 0 > difference:
-                    collision = False
-            if collision:
-                return True
-        # print("-----------------------------------------")
+            if len(self.obstacles[i][0]) == 2:
+                direction = 0.0
+                collision = True
+                for j in range(len(self.obstacles[i]) + 1):
+                    vx, vy = self.obstacles[i][(j+1) % len(self.obstacles[i])]
+                    new_direction = atan2(vy - ry, vx - rx)
+                    new_direction = new_direction if new_direction >= 0.0 else (new_direction + 2.0 * pi)
+                    difference = new_direction - direction
+                    difference = difference if difference >= -pi else difference + 2.0 * pi
+                    difference = difference if difference <= pi else difference - 2.0 * pi
+                    direction = new_direction
+                    if j > 0 > difference:
+                        collision = False
+                if collision:
+                    return True
+            else:
+                vx, vy, vw, vh = self.obstacles[i][0]
+                if ((vx - rx) ** 2) + (((vy - ry) * vw/vh) ** 2) <= vw ** 2.0:
+                    return True
         return False
 
 
