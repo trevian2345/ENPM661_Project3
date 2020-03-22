@@ -27,7 +27,7 @@ class Robot:
         # Structure of self.actions:  (Distance, angle in units of self.theta, cost)
         self.actions = [[step, (i-2) % (360 // self.theta), 1] for i in range(5)]
         # Starting node in tuple form (y, x, orientation)
-        self.start = (199 - start[1], start[0], (start[2] // self.theta) % (360 // self.theta))
+        self.start = (199 - start[1], start[0], (-start[2] // self.theta) % (360 // self.theta))
         self.goal = (199 - goal[1], goal[0], None)  # Goal coordinates in tuple form
         self.goal_threshold = 1.5
         self.success = True
@@ -77,6 +77,16 @@ class Robot:
         # Visualization image
         self.pathImage = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1], 3),
                                   dtype=np.uint8)
+        obstacle_space = np.array([[self.map.is_colliding((i / self.res, j / self.res), thickness=0)
+                                    for j in range(self.configSpace.shape[1])]
+                                   for i in range(self.configSpace.shape[0])], dtype=np.uint8)
+        self.obstacleIndices = np.where(obstacle_space)
+        self.freeIndices = np.where(1 - obstacle_space)
+        self.freeCount = int(np.sum(1 - obstacle_space) * self.configSpace.shape[2])
+        self.pathImage[self.obstacleIndices] = (128, 128, 128)
+        self.pathImage[self.freeIndices] = (192, 192, 192)
+
+        # Find a path
         self.solve()
 
     def solve(self):
@@ -88,7 +98,6 @@ class Robot:
         self.openGrid[self.start[0] * self.res, self.start[1] * self.res, self.start[2]] = 1
         sys.stdout.write("\nSearching for optimal path...\n")
         explored_count = 0
-        free_count = int(np.sum(1 - self.map.obstacle_space) * 12 * (self.res ** 2))
         start_time = datetime.today()
         while len(self.openList) > 0:
             # Find index of minimum cost cell
@@ -122,7 +131,7 @@ class Robot:
                     # Check for map boundaries
                     if 0 <= ny < self.map.height and 0 <= nx < self.map.width:
                         # Check for obstacles
-                        if not self.map.is_colliding((ny, nx)):
+                        if not self.map.is_colliding((ny, nx), check_inside=(self.radius+self.clearance <= self.step)):
                             # Check whether cell has been explored
                             if not self.closeGrid[int(ny * self.res), int(nx * self.res), nt]:
                                 # sys.stdout.write("\nnt: %d" % nt)
@@ -138,8 +147,6 @@ class Robot:
                                 else:
                                     # TODO:  Handle cell being approached from two cells with same cumulative cost
                                     pass
-                            else:
-                                pass
 
                 self.openList.pop(index)
                 if len(self.openList) == 0:
@@ -152,7 +159,7 @@ class Robot:
             # Update visualization
             self.pathImage[int(cell[0] * self.res), int(cell[1] * self.res)] +=\
                 np.array([255 // 12, 128 // 12, 0], dtype=np.uint8)
-            if explored_count % 200 == 0:
+            if explored_count % 100 == 0:  # Display every 100 frames
                 cv2.imshow("Image", self.pathImage)
                 cv2.waitKey(1)
 
@@ -160,7 +167,7 @@ class Robot:
             #     self.frames.append(np.copy(self.closeGrid))
             explored_count += 1
             sys.stdout.write("\r%d out of %d cells explored (%.1f %%)" %
-                             (explored_count, free_count, 100.0 * explored_count / free_count))
+                             (explored_count, self.freeCount, 100.0 * explored_count / self.freeCount))
         goal_y = int(self.goal[0] * self.res)
         goal_x = int(self.goal[1] * self.res)
         goal_r = self.goal[2]
@@ -190,7 +197,9 @@ class Robot:
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
                 self.pathImage[current_cell[0], current_cell[1]] = 1
-        self.map.show(self.pathImage)
+        cv2.imshow("Image", self.pathImage)
+        cv2.waitKey(0)
+        cv2.destroyWindow("Image")
 
     def on_goal(self, point):
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
