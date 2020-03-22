@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 from math import *
-from numpy import linalg as ln
 
 
 class ObstacleMap:
@@ -67,6 +66,7 @@ class ObstacleMap:
         # Create visualization
         self.obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
                                         for row in range(self.height)], dtype=np.uint8)
+        self.show(self.obstacle_image)
 
     def is_colliding(self, point):
         """
@@ -79,10 +79,16 @@ class ObstacleMap:
         """
         ry, rx = point
         for i in range(len(self.obstacles)):
+            # Polygons
             if len(self.obstacles[i][0]) == 2:
                 direction = 0.0
                 collision = True
                 for j in range(len(self.obstacles[i]) + 1):
+                    # Check if the point is within range of any of the vertices
+                    p1 = self.obstacles[i][j % len(self.obstacles[i])]
+                    if ((point[1] - p1[0]) ** 2) + ((point[0] - p1[1]) ** 2) <= (self.thickness ** 2):
+                        return True
+                    # Check if the point is inside of the polygon
                     vx, vy = self.obstacles[i][(j+1) % len(self.obstacles[i])]
                     new_direction = atan2(vy - ry, vx - rx)
                     new_direction = new_direction if new_direction >= 0.0 else (new_direction + 2.0 * pi)
@@ -94,31 +100,24 @@ class ObstacleMap:
                         collision = False
                 if collision:
                     return True
+                else:
+                    for j in range(len(self.obstacles[i])):
+                        x0, y0 = (point[1], point[0])
+                        x1, y1 = self.obstacles[i][j]
+                        x2, y2 = self.obstacles[i][(j + 1) % len(self.obstacles[i])]
+                        d = abs((y2 - y1)*x0 - (x2 - x1)*y0 + x2*y1 - y2*x1)/sqrt((y2-y1)**2 + (x2-x1)**2)
+                        if d < self.thickness:
+                            dot_product = (x0 - x1) * (x0 - x2) + (y0 - y1) * (y0 - y2)
+                            if dot_product < 0:
+                                return True
+            # Ellipse / circle
             else:
                 vx, vy, vw, vh = self.obstacles[i][0]
+                vw += self.thickness
+                vh += self.thickness
                 if ((vx - rx) ** 2) + (((vy - ry) * vw/vh) ** 2) <= vw ** 2.0:
                     return True
         return False
-    
-    def pdis(self, point):
-        """
-        Minimum distance check between the location of the robot to the obstacles
-        """
-        p3 = point
-        for i in range(len(self.obstacles)):
-            if len(self.obstacles[i][0]) == 2:
-                for j in range(len(self.obstacles[i])):
-                    if j == len(self.obstacles[i])-1:
-                        p1, p2 = self.obstacles[i][j], self.obstacles[i][0]
-                    else:
-                        p1, p2 = self.obstacles[i][j], self.obstacles[i][j+1]
-
-                    d = ln.norm(np.cross(np.subtract(p2, p1), np.subtract(p3, p1))) / ln.norm(np.subtract(p2, p1))
-
-                    if d < self.thickness:
-                        return True
-                    else:
-                        return False
 
 
 if __name__ == '__main__':
