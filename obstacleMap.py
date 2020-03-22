@@ -16,6 +16,7 @@ class ObstacleMap:
         self.collisionMatrix = np.zeros((self.height, self.width), dtype=np.uint8)
         self.window_name = "Image"
         self.obstacles = []
+        self.obstacle_image = np.array([[]], dtype=np.uint8)
         self.create_obstacles()
 
     def show(self, image):
@@ -63,9 +64,8 @@ class ObstacleMap:
         self.obstacles.append(points)
 
         # Create visualization
-        obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
-                                   for row in range(self.height)], dtype=np.uint8)
-        self.show(obstacle_image)
+        self.obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
+                                        for row in range(self.height)], dtype=np.uint8)
 
     def is_colliding(self, point):
         """
@@ -100,7 +100,9 @@ class ObstacleMap:
         return False
     
     def pdis(self, point):
-     ''' Minimum distance check between the location of the robot to the obstacles '''
+        """
+        Minimum distance check between the location of the robot to the obstacles
+        """
         p3 = point
         for i in range(len(self.obstacles)):
             if len(self.obstacles[i][0]) == 2:
@@ -116,6 +118,7 @@ class ObstacleMap:
                         return True
                     else:
                         return False
+
 
 if __name__ == '__main__':
     ObstacleMap(2)

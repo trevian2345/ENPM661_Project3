@@ -29,7 +29,7 @@ class Robot:
         self.start = (199 - start[1], start[0], (start[2] // self.theta) % (360 // self.theta))
         self.goal = (199 - goal[1], goal[0], None)  # Goal coordinates in tuple form
         self.goal_threshold = 1.5
-        self.success = False
+        self.success = True
         self.step = step
 
         # Handle radius and clearance arguments
@@ -53,10 +53,9 @@ class Robot:
         self.closeGrid = np.zeros_like(self.configSpace, dtype=np.uint8)  # Grid of explored cells
         # Grid containing parent cells
         self.parentGrid = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1],
-                                    self.configSpace.shape[2], 3), dtype=np.int)
+                                    self.configSpace.shape[2], 3), dtype=np.int) - 1
         # Grid containing movement policy
         self.actionGrid = np.zeros_like(self.parentGrid, np.float32)
-        print("New Shape: ", self.parentGrid.shape)
         self.pathImage = np.zeros_like(self.configSpace, dtype=np.uint8)  # Alternate image of optimal path
         self.frames = []
         self.solve()
@@ -87,6 +86,7 @@ class Robot:
 
             # See if goal cell has been reached (with threshold condition)
             if self.on_goal(cell):
+                print("Goal: ", cell)
                 self.goal = cell
                 self.openList = []
 
@@ -110,6 +110,7 @@ class Robot:
                                 if not self.openGrid[int(ny * self.res), int(nx * self.res), nt]:
                                     self.openList.append([next_cell, cost + self.step])
                                     parent = [int(cell[0] * self.res), int(cell[1] * self.res), cell[2]]
+                                    # print("NNNNN ", parent)
                                     self.parentGrid[int(ny * self.res), int(nx * self.res), nt] = parent
                                     action = [cell[0], cell[1], cell[2]]
                                     self.actionGrid[int(ny * self.res), int(nx * self.res), nt] = action
@@ -118,6 +119,8 @@ class Robot:
                                     # TODO:  Handle cell being approached from two cells with same cumulative cost
                                     pass
                 self.openList.pop(index)
+                if len(self.openList) == 0:
+                    self.success = False
 
             # Mark the cell as having been explored
             self.openGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 0
@@ -127,8 +130,11 @@ class Robot:
             explored_count += 1
             sys.stdout.write("\r%d out of %d cells explored (%.1f %%)" %
                              (explored_count, free_count, 100.0 * explored_count / free_count))
-        current_cell = self.goal
-        next_action_index = self.actionGrid[current_cell]
+        goal_y = int(self.goal[0] * self.res)
+        goal_x = int(self.goal[1] * self.res)
+        goal_r = self.goal[2]
+        current_cell = (goal_y, goal_x, goal_r)
+        next_cell = tuple(self.parentGrid[current_cell])
 
         # Output timing information
         end_time = datetime.today()
@@ -141,23 +147,18 @@ class Robot:
         sys.stdout.write("%.3f sec" % ((duration.seconds % 60) + (duration.microseconds / 1000000.0)))
 
         # Check for failure to reach the goal cell
-        if next_action_index == 255:
-            if not self.on_goal(self.start):
-                sys.stdout.write("\n\nFailed to find a path to the goal!\n")
-            else:
-                sys.stdout.write("\n\nNo path generated.  Robot starts at goal space.\n")
+        if self.on_goal(self.start):
+            sys.stdout.write("\n\nNo path generated.  Robot starts at goal space.\n")
+        elif not self.success:
+            sys.stdout.write("\n\nFailed to find a path to the goal!\n")
 
         # Backtracking from the goal cell to extract an optimal path
         else:
-            pass
-            # self.success = True
-            # sys.stdout.write("\n\nGoal reached!\n")
-            # while next_action_index != 255:
-            #     current_cell = (current_cell[0] - self.actions[next_action_index][0],
-            #                     current_cell[1] - self.actions[next_action_index][1])
-            #     self.backTrack[current_cell] = (255, 0, 255)
-            #     self.pathImage[current_cell] = 1
-            #     next_action_index = self.actionGrid[current_cell]
+            sys.stdout.write("\n\nGoal reached!\n")
+            while sum(next_cell) >= 0:
+                current_cell = next_cell
+                next_cell = tuple(self.parentGrid[next_cell])
+                # self.pathImage[current_cell] = 1
 
     @staticmethod
     def handling_theta(t):
@@ -187,19 +188,25 @@ class Robot:
         :return: Rounded point
         """
         new = ceil(point)
-       
+        # print(0)
+        # print(new)
         if 0.75 >= new - point >= 0.25:
             point = new - 0.5
+            print(1)
         elif 0.75 < new - point <= 1:
             point = floor(point)
+            print(2)
         elif 0.25 > new - point >= 0:
             point = new
+            print(3)
         else:
             return point
         return point
 
     def on_goal(self, point):
-        return sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
+        result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
+        if self.goal[2] is None:
+            return result and (True if self.goal[2] is None else self.goal[2] == point[2])
 
 
 if __name__ == '__main__':
