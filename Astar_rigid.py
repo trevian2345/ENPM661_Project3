@@ -98,7 +98,7 @@ class Robot:
                 # Heuristic is the Euclidean distance to the goal
                 ny = self.openList[i][0][0]
                 nx = self.openList[i][0][1]
-                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) + 1
+                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) * 2
                 cost_list.append(self.openList[i][1] + heuristic)
                 # sys.stdout.write("\nPoint: <%06.2f, %06.2f, %03d>     " % (ny, nx, self.openList[i][0][2]*30))
                 # sys.stdout.write("Cost: %.2f        Heuristic: %.2f" % (self.openList[i][1], heuristic))
