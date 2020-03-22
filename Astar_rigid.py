@@ -8,7 +8,7 @@ from obstacleMap import ObstacleMap
 
 
 class Robot:
-    def __init__(self, start, goal, radius, clearance, step=1):
+    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None):
         """
         Initialization of the robot.
         :param start: starting coordinates for the robot, in tuple form (y, x, t)
@@ -28,7 +28,7 @@ class Robot:
         self.actions = [[step, (i-2) % (360 // self.theta), 1] for i in range(5)]
         # Starting node in tuple form (y, x, orientation)
         self.start = (199 - start[1], start[0], (-start[2] // self.theta) % (360 // self.theta))
-        self.goal = (199 - goal[1], goal[0], None)  # Goal coordinates in tuple form
+        self.goal = (199 - goal[1], goal[0], (-theta_g // self.theta) % (360 // self.theta))  # Goal coordinates
         self.goal_threshold = 1.5
         self.success = True
         self.step = step
@@ -109,8 +109,6 @@ class Robot:
                 nx = self.openList[i][0][1]
                 heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) * 2
                 cost_list.append(self.openList[i][1] + heuristic)
-                # sys.stdout.write("\nPoint: <%06.2f, %06.2f, %03d>     " % (ny, nx, self.openList[i][0][2]*30))
-                # sys.stdout.write("Cost: %.2f        Heuristic: %.2f" % (self.openList[i][1], heuristic))
             index = int(np.argmin(cost_list, axis=0))
             cell = self.openList[index][0]
             cost = self.openList[index][1]
@@ -134,10 +132,8 @@ class Robot:
                         if not self.map.is_colliding((ny, nx), check_inside=(self.radius+self.clearance <= self.step)):
                             # Check whether cell has been explored
                             if not self.closeGrid[int(ny * self.res), int(nx * self.res), nt]:
-                                # sys.stdout.write("\nnt: %d" % nt)
                                 # Check if cell is already pending exploration
                                 if not self.openGrid[int(ny * self.res), int(nx * self.res), nt]:
-                                    # sys.stdout.write("\nAction:  %d" % self.actions[a][1])
                                     self.openList.append([next_cell, cost + self.step])
                                     parent = [int(cell[0] * self.res), int(cell[1] * self.res), cell[2]]
                                     self.parentGrid[int(ny * self.res), int(nx * self.res), nt] = parent
@@ -203,8 +199,7 @@ class Robot:
 
     def on_goal(self, point):
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
-        if self.goal[2] is None:
-            return result and (True if self.goal[2] is None else self.goal[2] == point[2])
+        return result and (True if self.goal[2] is None else self.goal[2] == point[2])
 
 
 if __name__ == '__main__':
@@ -216,11 +211,11 @@ if __name__ == '__main__':
     parser.add_argument('theta_s', type=int, help='Start point orientation of the robot')
     parser.add_argument('goalX', type=int, help='X-coordinate of goal node of the robot')
     parser.add_argument('goalY', type=int, help='Y-coordinate of goal node of the robot')
-    # parser.add_argument('theta_g', type=int, help='Goal point orientation of the robot')
     parser.add_argument('radius', type=int, help='Indicates the radius of the rigid robot')
     parser.add_argument("clearance", type=int,
                         help="Indicates the minimum required clearance between the rigid robot and obstacles")
     parser.add_argument('step', type=int, help='Indicates the step size of the robot')
+    parser.add_argument('--theta_g', type=int, help='Goal point orientation of the robot')
     # parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
     args = parser.parse_args()
 
@@ -229,11 +224,11 @@ if __name__ == '__main__':
     ts = args.theta_s
     gx = args.goalX
     gy = args.goalY
-    # tg = args.theta_g
+    tg = args.theta_g
     r = args.radius
     c = args.clearance
     s = args.step
     # p = args.play
     start_pos = (sx, sy, ts)
     goal_pos = (gx, gy)
-    rigidRobot = Robot(start_pos, goal_pos, r, c, s)
+    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg)
