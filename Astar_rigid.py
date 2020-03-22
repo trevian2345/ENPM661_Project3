@@ -187,17 +187,13 @@ class Robot:
         :return: Rounded point
         """
         new = ceil(point)
-        # print(0)
-        # print(new)
+       
         if 0.75 >= new - point >= 0.25:
             point = new - 0.5
-            print(1)
         elif 0.75 < new - point <= 1:
             point = floor(point)
-            print(2)
         elif 0.25 > new - point >= 0:
             point = new
-            print(3)
         else:
             return point
         return point
