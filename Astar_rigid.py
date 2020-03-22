@@ -8,14 +8,14 @@ from obstacleMap import ObstacleMap
 
 
 class Robot:
-    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None):
+    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None):
         """
         Initialization of the robot.
         :param start: starting coordinates for the robot, in tuple form (y, x, t)
         :param goal: goal coordinates for the robot, in tuple form (y, x)
         Attributes:
             start: Same as init argument start
-            goal: Same as init argument start
+            goal: Same as init argument goal
             openList: List of coordinates pending exploration, in the form: [(y, x, orientation), cost, action]
             openGrid: Matrix storing "1" for cells pending exploration, and "0" otherwise
             closeGrid: Matrix storing "1" for cells that have been explored, and "0" otherwise
@@ -28,10 +28,12 @@ class Robot:
         self.actions = [[step, (i-2) % (360 // self.theta), 1] for i in range(5)]
         # Starting node in tuple form (y, x, orientation)
         self.start = (199 - start[1], start[0], (-start[2] // self.theta) % (360 // self.theta))
-        self.goal = (199 - goal[1], goal[0], (-theta_g // self.theta) % (360 // self.theta))  # Goal coordinates
-        self.goal_threshold = 1.5
+        goal_2 = (-theta_g // self.theta) % (360 // self.theta) if theta_g is not None else None
+        self.goal = (199 - goal[1], goal[0], goal_2)  # Goal coordinates
         self.success = True
         self.step = step
+        self.goal_threshold = self.step * 1.5
+        self.hw = hw if hw is not None else 2.0  # Heuristic weight (set to 1.0 for optimal path or 0.0 for Dijkstra)
 
         # Handle radius and clearance arguments
         self.radius = radius
@@ -107,7 +109,7 @@ class Robot:
                 # Heuristic is the Euclidean distance to the goal
                 ny = self.openList[i][0][0]
                 nx = self.openList[i][0][1]
-                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) * 2
+                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) * self.hw
                 cost_list.append(self.openList[i][1] + heuristic)
             index = int(np.argmin(cost_list, axis=0))
             cell = self.openList[index][0]
@@ -215,7 +217,9 @@ if __name__ == '__main__':
     parser.add_argument("clearance", type=int,
                         help="Indicates the minimum required clearance between the rigid robot and obstacles")
     parser.add_argument('step', type=int, help='Indicates the step size of the robot')
-    parser.add_argument('--theta_g', type=int, help='Goal point orientation of the robot')
+    parser.add_argument('--theta_g', type=int, help='Goal point orientation of the robot.  Omit for any orientation.')
+    parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
+                                                 '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
     # parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
     args = parser.parse_args()
 
@@ -225,10 +229,11 @@ if __name__ == '__main__':
     gx = args.goalX
     gy = args.goalY
     tg = args.theta_g
+    h_weight = args.hw
     r = args.radius
     c = args.clearance
     s = args.step
     # p = args.play
     start_pos = (sx, sy, ts)
     goal_pos = (gx, gy)
-    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg)
+    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight)
