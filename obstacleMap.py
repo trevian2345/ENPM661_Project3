@@ -99,7 +99,7 @@ class ObstacleMap:
                     return True
         return False
     
-    def pdis(self, point, rc):
+    def pdis(self, point):
      ''' Minimum distance check between the location of the robot to the obstacles '''
         p3 = point
         pd = []
@@ -114,7 +114,7 @@ class ObstacleMap:
                     d = ln.norm(np.cross(np.subtract(p2, p1), np.subtract(p3, p1))) / ln.norm(np.subtract(p2, p1))
                     pd.append(d)
         for a in range(len(pd)):
-            if pd[a] < rc:
+            if pd[a] < self.thickness:
                 return True
             else:
                 continue
