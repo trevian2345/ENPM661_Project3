@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from math import *
+from numpy import linalg as ln
 
 
 class ObstacleMap:
