@@ -64,9 +64,9 @@ class ObstacleMap:
         self.obstacles.append(points)
 
         # Create visualization
-        self.obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
-                                        for row in range(self.height)], dtype=np.uint8)
-        self.show(self.obstacle_image)
+        # self.obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
+        #                                 for row in range(self.height)], dtype=np.uint8)
+        # self.show(self.obstacle_image)
 
     def is_colliding(self, point):
         """
