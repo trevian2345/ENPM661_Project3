@@ -1,5 +1,6 @@
 from math import *
 import numpy as np
+import cv2
 import sys
 import argparse
 from datetime import datetime
@@ -45,6 +46,22 @@ class Robot:
         if self.radius == 0:
             sys.stdout.write("\nRadius is zero.  This is a point robot with clearance %d." % self.clearance)
 
+        # Check to see if start and goal cells lie within map boundaries
+        if not (0 <= self.start[0] < self.map.height) or not (0 <= self.start[1] < self.map.width):
+            sys.stdout.write("\nStart lies outside of map boundaries!\n")
+            exit(0)
+        elif not (0 <= self.goal[0] < self.map.height) or not (0 <= self.goal[1] < self.map.width):
+            sys.stdout.write("\nGoal lies outside of map boundaries!\n")
+            exit(0)
+
+        # Check to see if start and goal cells are in free spaces
+        elif self.map.is_colliding(self.start):
+            sys.stdout.write("\nStart lies within obstacle space!\n")
+            exit(0)
+        elif self.map.is_colliding(self.goal):
+            sys.stdout.write("\nGoal lies within obstacle space!\n")
+            exit(0)
+
         # Define cell maps to track exploration
         self.openList = []  # List of coordinates to be explored, in the form: [(y, x, t), cost, action]
         self.configSpace = np.zeros((int(ceil(self.map.height * self.res)),
@@ -56,8 +73,10 @@ class Robot:
                                     self.configSpace.shape[2], 3), dtype=np.int) - 1
         # Grid containing movement policy
         self.actionGrid = np.zeros_like(self.parentGrid, np.float32)
-        self.pathImage = np.zeros_like(self.configSpace, dtype=np.uint8)  # Alternate image of optimal path
-        self.frames = []
+
+        # Visualization image
+        self.pathImage = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1], 3),
+                                  dtype=np.uint8)
         self.solve()
 
     def solve(self):
@@ -69,24 +88,26 @@ class Robot:
         self.openGrid[self.start[0] * self.res, self.start[1] * self.res, self.start[2]] = 1
         sys.stdout.write("\nSearching for optimal path...\n")
         explored_count = 0
-        free_count = int(np.sum(1 - self.configSpace))
+        free_count = int(np.sum(1 - self.map.obstacle_space) * 12 * (self.res ** 2))
         start_time = datetime.today()
         while len(self.openList) > 0:
             # Find index of minimum cost cell
             cost_list = []
+            # sys.stdout.write("\n-----------------------------------------")
             for i in range(len(self.openList)):
                 # Heuristic is the Euclidean distance to the goal
                 ny = self.openList[i][0][0]
                 nx = self.openList[i][0][1]
-                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2)
+                heuristic = sqrt((ny - self.goal[0]) ** 2 + (nx - self.goal[1]) ** 2) + 1
                 cost_list.append(self.openList[i][1] + heuristic)
+                # sys.stdout.write("\nPoint: <%06.2f, %06.2f, %03d>     " % (ny, nx, self.openList[i][0][2]*30))
+                # sys.stdout.write("Cost: %.2f        Heuristic: %.2f" % (self.openList[i][1], heuristic))
             index = int(np.argmin(cost_list, axis=0))
             cell = self.openList[index][0]
             cost = self.openList[index][1]
 
             # See if goal cell has been reached (with threshold condition)
             if self.on_goal(cell):
-                print("Goal: ", cell)
                 self.goal = cell
                 self.openList = []
 
@@ -95,22 +116,21 @@ class Robot:
                 for a in range(len(self.actions)):
                     next_cell = (cell[0] + self.actions[a][0] * sin(self.theta*(self.actions[a][1] + cell[2])*pi/180),
                                  cell[1] + self.actions[a][0] * cos(self.theta*(self.actions[a][1] + cell[2])*pi/180),
-                                 (cell[2] + self.actions[a][2]) % (360 // self.theta))
+                                 (cell[2] + self.actions[a][1]) % (360 // self.theta))
                     ny, nx, nt = next_cell
-                    # print(ny)
-                    # print(nx)
-                    # print(nt)
+
                     # Check for map boundaries
                     if 0 <= ny < self.map.height and 0 <= nx < self.map.width:
                         # Check for obstacles
                         if not self.map.is_colliding((ny, nx)):
                             # Check whether cell has been explored
                             if not self.closeGrid[int(ny * self.res), int(nx * self.res), nt]:
+                                # sys.stdout.write("\nnt: %d" % nt)
                                 # Check if cell is already pending exploration
                                 if not self.openGrid[int(ny * self.res), int(nx * self.res), nt]:
+                                    # sys.stdout.write("\nAction:  %d" % self.actions[a][1])
                                     self.openList.append([next_cell, cost + self.step])
                                     parent = [int(cell[0] * self.res), int(cell[1] * self.res), cell[2]]
-                                    # print("NNNNN ", parent)
                                     self.parentGrid[int(ny * self.res), int(nx * self.res), nt] = parent
                                     action = [cell[0], cell[1], cell[2]]
                                     self.actionGrid[int(ny * self.res), int(nx * self.res), nt] = action
@@ -118,6 +138,9 @@ class Robot:
                                 else:
                                     # TODO:  Handle cell being approached from two cells with same cumulative cost
                                     pass
+                            else:
+                                pass
+
                 self.openList.pop(index)
                 if len(self.openList) == 0:
                     self.success = False
@@ -125,6 +148,14 @@ class Robot:
             # Mark the cell as having been explored
             self.openGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 0
             self.closeGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 1
+
+            # Update visualization
+            self.pathImage[int(cell[0] * self.res), int(cell[1] * self.res)] +=\
+                np.array([255 // 12, 128 // 12, 0], dtype=np.uint8)
+            if explored_count % 200 == 0:
+                cv2.imshow("Image", self.pathImage)
+                cv2.waitKey(1)
+
             # if explored_count % 15 == 0:
             #     self.frames.append(np.copy(self.closeGrid))
             explored_count += 1
@@ -158,50 +189,8 @@ class Robot:
             while sum(next_cell) >= 0:
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
-                # self.pathImage[current_cell] = 1
-
-    @staticmethod
-    def handling_theta(t):
-        """
-        Function to handle the theta values(to nearest 30)
-        :param t: input theta
-        :return: theta normalized to an integer from 0 to 11
-        """
-        if (30 > t >= 15) or (330 <= t < 3455):
-            return 1
-        elif 0 <= t < 3455 or 0 > t >= 345:
-            return 0
-        else:
-            t = t / 30
-            t_n = t % floor(t)
-            if t_n <= 0.5:
-                t = floor(t)
-            else:
-                t = ceil(t)
-            return t
-
-    @staticmethod
-    def handling_point(point):
-        """
-        Function to round coordinates
-        :param point: Coordinate to round
-        :return: Rounded point
-        """
-        new = ceil(point)
-        # print(0)
-        # print(new)
-        if 0.75 >= new - point >= 0.25:
-            point = new - 0.5
-            print(1)
-        elif 0.75 < new - point <= 1:
-            point = floor(point)
-            print(2)
-        elif 0.25 > new - point >= 0:
-            point = new
-            print(3)
-        else:
-            return point
-        return point
+                self.pathImage[current_cell[0], current_cell[1]] = 1
+        self.map.show(self.pathImage)
 
     def on_goal(self, point):
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold

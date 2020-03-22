@@ -16,7 +16,7 @@ class ObstacleMap:
         self.collisionMatrix = np.zeros((self.height, self.width), dtype=np.uint8)
         self.window_name = "Image"
         self.obstacles = []
-        self.obstacle_image = np.array([[]], dtype=np.uint8)
+        self.obstacle_space = np.array([[]], dtype=np.uint8)
         self.create_obstacles()
 
     def show(self, image):
@@ -64,9 +64,9 @@ class ObstacleMap:
         self.obstacles.append(points)
 
         # Create visualization
-        # self.obstacle_image = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
-        #                                 for row in range(self.height)], dtype=np.uint8)
-        # self.show(self.obstacle_image)
+        self.obstacle_space = np.array([[int(self.is_colliding((row, col))) for col in range(self.width)]
+                                        for row in range(self.height)], dtype=np.uint8)
+        # self.show(self.obstacle_space)
 
     def is_colliding(self, point):
         """
@@ -77,7 +77,8 @@ class ObstacleMap:
         :param point: The point to check for collisions
         :return: True if there is a collision, False otherwise
         """
-        ry, rx = point
+        ry = point[0]
+        rx = point[1]
         for i in range(len(self.obstacles)):
             # Polygons
             if len(self.obstacles[i][0]) == 2:
