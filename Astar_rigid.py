@@ -8,7 +8,7 @@ from obstacleMap import ObstacleMap
 
 
 class Robot:
-    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None):
+    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None, play=False):
         """
         Initialization of the robot.
         :param start: starting coordinates for the robot, in tuple form (y, x, t)
@@ -87,6 +87,9 @@ class Robot:
         self.freeCount = int(np.sum(1 - obstacle_space) * self.configSpace.shape[2])
         self.pathImage[self.obstacleIndices] = (128, 128, 128)
         self.pathImage[self.freeIndices] = (192, 192, 192)
+        self.draw_start_and_goal(self.pathImage)
+        self.frames = [np.copy(self.pathImage)]
+        self.play = play
 
         # Find a path
         self.solve()
@@ -155,22 +158,21 @@ class Robot:
             self.closeGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 1
 
             # Update visualization
-            self.pathImage[int(cell[0] * self.res), int(cell[1] * self.res)] +=\
-                np.array([255 // 12, 128 // 12, 0], dtype=np.uint8)
-            if explored_count % 100 == 0:  # Display every 100 frames
-                cv2.imshow("Image", self.pathImage)
-                cv2.waitKey(1)
+            line_color = np.sum(self.closeGrid[int(cell[0] * self.res), int(cell[1] * self.res)])
+            line_color = (255, int(255 - (1.0 - line_color / (360 / self.theta)) * 192), 64)
+            if explored_count > 0:
+                parent_cell = tuple(self.parentGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]][:2])
+                parent_cell = (parent_cell[1], parent_cell[0])
+                cv2.line(self.pathImage, (int(cell[1] * self.res), int(cell[0] * self.res)),
+                         parent_cell, line_color)
+            if explored_count % 10 == 0 or len(self.openList) == 0 and self.success:  # Display every 100 frames
+                self.frames.append(np.copy(self.pathImage))
+                # cv2.imshow("Image", self.pathImage)
+                # cv2.waitKey(1)
 
-            # if explored_count % 15 == 0:
-            #     self.frames.append(np.copy(self.closeGrid))
             explored_count += 1
             sys.stdout.write("\r%d out of %d cells explored (%.1f %%)" %
                              (explored_count, self.freeCount, 100.0 * explored_count / self.freeCount))
-        goal_y = int(self.goal[0] * self.res)
-        goal_x = int(self.goal[1] * self.res)
-        goal_r = self.goal[2]
-        current_cell = (goal_y, goal_x, goal_r)
-        next_cell = tuple(self.parentGrid[current_cell])
 
         # Output timing information
         end_time = datetime.today()
@@ -191,17 +193,69 @@ class Robot:
         # Backtracking from the goal cell to extract an optimal path
         else:
             sys.stdout.write("\n\nGoal reached!\n")
+            goal_y = int(self.goal[0] * self.res)
+            goal_x = int(self.goal[1] * self.res)
+            goal_r = self.goal[2]
+            current_cell = (goal_y, goal_x, goal_r)
+            next_cell = tuple(self.parentGrid[current_cell])
             while sum(next_cell) >= 0:
+                cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
+                         (next_cell[1], next_cell[0]), (32, 150, 255), thickness=1 + 2 * self.radius * self.res)
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
-                self.pathImage[current_cell[0], current_cell[1]] = 1
-        cv2.imshow("Image", self.pathImage)
-        cv2.waitKey(0)
-        cv2.destroyWindow("Image")
+            self.frames.append(np.copy(self.pathImage))
+            self.draw_start_and_goal(self.pathImage, start_only=True)
+
+        # Create output video
+        writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('H', '2', '6', '4'), 30,
+                                 (int(self.map.width * self.res), int(self.map.height * self.res)))
+        window_name = "Animation"
+        for i in range(150):
+            writer.write(self.frames[0])
+        for frame in self.frames[:len(self.frames)-1]:
+            writer.write(frame)
+            if self.play:
+                cv2.imshow(window_name, frame)
+                cv2.waitKey(15)
+        for i in range(60):
+            writer.write(self.frames[len(self.frames) - 2])
+        if self.play:
+            cv2.imshow(window_name, self.frames[len(self.frames) - 2])
+            cv2.waitKey(2000)
+        for i in range(180):
+            writer.write(self.pathImage if self.success else self.frames[len(self.frames) - 2])
+        if self.play:
+            cv2.imshow(window_name, self.pathImage if self.success else self.frames[len(self.frames) - 2])
+            cv2.waitKey(5000)
+        writer.release()
+        if self.play:
+            cv2.imshow(window_name, self.pathImage)
+            cv2.waitKey(0)
+        cv2.destroyWindow(window_name)
 
     def on_goal(self, point):
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
         return result and (True if self.goal[2] is None else self.goal[2] == point[2])
+
+    def draw_start_and_goal(self, image, start_only=False):
+        # Draw robot
+        points = [(self.start, (0, 0, 255))]
+        if not start_only:
+            points.append((self.goal, (0, 192, 0)))
+        for pt, col in points:
+            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), self.radius * self.res + 4,
+                       col, 1)
+            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), self.radius * self.res,
+                       col, -1)
+            if pt[2] is not None:
+                s_arrow = [[int((pt[1]+(self.radius+2)*cos((pt[2]*self.theta + 45)*pi/180)) * self.res),
+                            int((pt[0]+(self.radius+2)*sin((pt[2]*self.theta + 45)*pi/180)) * self.res)],
+                           [int((pt[1]+(self.radius+2)*2*cos(pt[2]*self.theta*pi/180)) * self.res),
+                            int((pt[0]+(self.radius+2)*2*sin(pt[2]*self.theta*pi/180)) * self.res)],
+                           [int((pt[1]+(self.radius+2)*cos((pt[2]*self.theta - 45)*pi/180)) * self.res),
+                            int((pt[0]+(self.radius+2)*sin((pt[2]*self.theta - 45)*pi/180)) * self.res)]]
+                polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
+                cv2.polylines(image, [polygon], False, col, thickness=1)
 
 
 if __name__ == '__main__':
@@ -220,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--theta_g', type=int, help='Goal point orientation of the robot.  Omit for any orientation.')
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
-    # parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
+    parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
     args = parser.parse_args()
 
     sx = args.initialX
@@ -233,7 +287,7 @@ if __name__ == '__main__':
     r = args.radius
     c = args.clearance
     s = args.step
-    # p = args.play
+    p = args.play
     start_pos = (sx, sy, ts)
     goal_pos = (gx, gy)
-    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight)
+    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight, play=p)
