@@ -196,13 +196,13 @@ class Robot:
             goal_r = self.goal[2]
             current_cell = (goal_y, goal_x, goal_r)
             next_cell = tuple(self.parentGrid[current_cell])
-            path_points = [self.actionGrid[current_cell]]
+            path_points = [(int(self.goal[0]), int(self.goal[1]), self.goal[2])]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
                          (next_cell[1], next_cell[0]), (64, 192, 255), thickness=1 + self.radius * self.res)
+                path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
-                path_points.append(self.actionGrid[current_cell])
             path_points.reverse()
             self.frames.append(np.copy(self.pathImage))
             self.draw_start_and_goal(self.start, self.pathImage, start_only=True)
