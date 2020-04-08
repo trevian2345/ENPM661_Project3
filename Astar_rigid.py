@@ -40,6 +40,18 @@ class Robot:
         self.goal_threshold = self.step * 1.5
         self.hw = hw if hw is not None else 2.0  # Heuristic weight (set to 1.0 for optimal path or 0.0 for Dijkstra)
 
+        # Output arguments
+        sys.stdout.write("\nThe following parameters have been provided:")
+        sys.stdout.write("\n    Robot start:  x = %.1f, y = %.1f, theta = %d deg" %
+                         (start[0], start[1], (int(360 - self.start[2] * self.theta) % 360)))
+        sys.stdout.write("\n    Robot goal:  x = %.1f, y = %.1f" % (goal[0], goal[1]))
+        if self.goal[2] is not None:
+            sys.stdout.write(", theta = %d deg" % (int(360 - self.goal[2] * self.theta) % 360))
+        sys.stdout.write("\n    Robot radius:  %.1f" % radius)
+        sys.stdout.write("\n    Robot clearance:  %.1f" % clearance)
+        sys.stdout.write("\n    Robot step size:  %.1f" % self.step)
+        sys.stdout.write("\n    Heuristic weight:  %.2f\n" % self.hw)
+
         # Handle radius and clearance arguments
         self.radius = radius
         self.clearance = clearance
@@ -85,6 +97,7 @@ class Robot:
         # Visualization image
         self.pathImage = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1], 3),
                                   dtype=np.uint8)
+        sys.stdout.write("\nCreating state space matrices...")
         obstacle_space = np.array([[self.map.is_colliding((i / self.res, j / self.res), thickness=0)
                                     for j in range(self.configSpace.shape[1])]
                                    for i in range(self.configSpace.shape[0])], dtype=np.uint8)
@@ -301,7 +314,7 @@ class Robot:
         image[self.obstacleIndices] = self.colors["obstacle"]
 
 
-if __name__ == '__main__':
+def main(argv):
     parser = argparse.ArgumentParser(
         description="Project-3 -- Phase-2:  Navigation of a rigid robot from a start point"
                     "to an end point using A* algorithm.")
@@ -318,7 +331,7 @@ if __name__ == '__main__':
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     sx = args.initialX
     sy = args.initialY
@@ -333,4 +346,8 @@ if __name__ == '__main__':
     p = args.play
     start_pos = (sx, sy, ts)
     goal_pos = (gx, gy)
-    rigidRobot = Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight, play=p)
+    Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight, play=p)
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
