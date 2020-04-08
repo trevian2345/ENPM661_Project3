@@ -91,8 +91,13 @@ class Robot:
         self.obstacleIndices = np.where(obstacle_space)
         self.freeIndices = np.where(1 - obstacle_space)
         self.freeCount = int(np.sum(1 - obstacle_space) * self.configSpace.shape[2])
-        self.pathImage[self.obstacleIndices] = (128, 128, 128)
-        self.pathImage[self.freeIndices] = (192, 192, 192)
+        self.colors = {"free": (192, 192, 192),
+                       "obstacle": (128, 128, 128),
+                       "robot": (0, 0, 255),
+                       "goal": (0, 192, 0),
+                       "path": (64, 192, 255)}
+        self.pathImage[self.obstacleIndices] = self.colors["obstacle"]
+        self.pathImage[self.freeIndices] = self.colors["free"]
         self.baseImage = np.copy(self.pathImage)
         self.draw_robot_and_goal(self.start, self.pathImage)
         self.frames = [np.copy(self.pathImage)]
@@ -205,7 +210,7 @@ class Robot:
             path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
-                         (next_cell[1], next_cell[0]), (64, 192, 255), thickness=1 + 2 * self.radius * self.res)
+                         (next_cell[1], next_cell[0]), self.colors["path"], thickness=1 + 2 * self.radius * self.res)
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
@@ -269,8 +274,8 @@ class Robot:
         rim: bool, optional
             Whether to draw the rim around the robot's start position.  Defaults to True.  The goal always has a rim.
         """
-        points = [(self.goal, (0, 192, 0))] if not start_only else []
-        points.append((robot_pos, (0, 0, 255)))
+        points = [(self.goal, self.colors["goal"])] if not start_only else []
+        points.append((robot_pos, self.colors["robot"]))
         goal = len(points) - 1
         for pt, col in points:
             rad = int(self.radius + (self.goal_threshold if goal else 0.0))
@@ -289,6 +294,7 @@ class Robot:
                 polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
                 cv2.polylines(image, [polygon], False, col, thickness=1)
             goal -= 1
+        image[self.obstacleIndices] = self.colors["obstacle"]
 
 
 if __name__ == '__main__':
