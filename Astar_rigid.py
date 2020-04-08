@@ -248,11 +248,14 @@ class Robot:
                 self.draw_robot_and_goal(path_points[i], next_image, rim=False)
                 for j in range(min(1 + int(self.step) // 5, 5)):
                     writer.write(next_image)
+                    if self.play:
+                        cv2.imshow(window_name, next_image)
+                        cv2.waitKey(15)
             for i in range(150):
                 writer.write(next_image)
             if self.play:
                 cv2.imshow(window_name, next_image)
-                cv2.waitKey(15)
+                cv2.waitKey(500)
         writer.release()
         cv2.destroyWindow(window_name)
 
