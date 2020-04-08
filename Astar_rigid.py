@@ -9,22 +9,45 @@ from obstacleMap import ObstacleMap
 
 class Robot:
     """
-    Robot class
+    Robot class.
 
     Attributes
     ----------
-    start: Same as init argument start
-    goal: Same as init argument goal
-    openList: List of coordinates pending exploration, in the form: [(y, x, orientation), cost, action]
-    openGrid: Matrix storing "1" for cells pending exploration, and "0" otherwise
-    closeGrid: Matrix storing "1" for cells that have been explored, and "0" otherwise
-    actionGrid: Matrix storing the optimal movement policy for cells that have been explored, and 255 otherwise
+    start: tuple of float
+        Same as init argument start
+    goal: tuple of float
+        Same as init argument goal
+    openList: np.array
+        List of coordinates pending exploration, in the form: [(y, x, orientation), cost, action]
+    openGrid: np.array
+        Matrix storing "1" for cells pending exploration, and "0" otherwise
+    closeGrid: np.array
+        Matrix storing "1" for cells that have been explored, and "0" otherwise
+    actionGrid: np.array
+        Matrix storing the optimal movement policy for cells that have been explored, and 255 otherwise
     """
     def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None, play=False):
         """
         Initialization of the robot.
-        :param start: starting coordinates for the robot, in tuple form (y, x, t)
-        :param goal: goal coordinates for the robot, in tuple form (y, x)
+
+        Parameters
+        ----------
+        start: tuple of float
+            starting coordinates for the robot, in tuple form (y, x, t)
+        goal: tuple of float
+            goal coordinates for the robot, in tuple form (y, x)
+        radius: float
+            Robot radius
+        clearance: float
+            Robot minimum clearance from obstacles
+        step: float
+            Robot forward step size
+        theta_g: float, optional
+            Optional goal theta
+        hw: float, optional
+            Heuristic weight
+        play: bool, optional
+            Whether to play using OpenCV's imshow()
         """
         self.res = 2.0  # Resolution of matrix for tracking duplicate states
         self.theta = 30  # Angle between action steps
@@ -121,7 +144,7 @@ class Robot:
 
     def solve(self):
         """
-        Solves the puzzle
+        Solves the puzzle.
         """
         # Initialize the open list/grid with the start cell
         self.openList = [[self.start, 0]]  # [point, cost, action]
@@ -213,8 +236,7 @@ class Robot:
 
         # Backtracking from the goal cell to extract an optimal path
         else:
-            sys.stdout.write("\n\nGoal reached!  If you receive an error below related to FFmpeg, but the output "
-                             "video plays, you may disregard the error.\n\n")
+            sys.stdout.write("\n\nGoal reached!\n")
             goal_y = int(self.lastPosition[0] * self.res)
             goal_x = int(self.lastPosition[1] * self.res)
             goal_r = self.lastPosition[2]
@@ -233,7 +255,7 @@ class Robot:
             self.draw_robot_and_goal(self.start, self.pathImage, start_only=True)
 
         # Create output video
-        writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('H', '2', '6', '4'), 30,
+        writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('a', 'v', 'c', '1'), 30,
                                  (int(self.map.width * self.res), int(self.map.height * self.res)))
         window_name = "Animation"
         for i in range(150):
@@ -273,6 +295,19 @@ class Robot:
         cv2.destroyWindow(window_name)
 
     def on_goal(self, point):
+        """
+        Checks to see whether the given point is on the goal (within a certain threshold).
+
+        Parameters
+        ----------
+        point: tuple of float
+            The point for which to check
+
+        Returns
+        -------
+        bool
+            True if the point is on the goal, False otherwise
+        """
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
         return result and (True if self.goal[2] is None else self.goal[2] == point[2])
 
