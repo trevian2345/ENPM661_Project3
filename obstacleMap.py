@@ -82,6 +82,8 @@ class ObstacleMap:
         t = self.thickness if thickness is None else thickness
         ry = point[0]
         rx = point[1]
+        if not (t <= ry <= self.height - t) or not (t <= rx <= self.width - t):
+            return True
         for i in range(len(self.obstacles)):
             # Polygons
             if len(self.obstacles[i][0]) == 2:
@@ -90,12 +92,12 @@ class ObstacleMap:
                 for j in range(len(self.obstacles[i]) + 1):
                     # Check if the point is within range of any of the vertices
                     p1 = self.obstacles[i][j % len(self.obstacles[i])]
-                    if ((point[1] - p1[0]) ** 2) + ((point[0] - p1[1]) ** 2) <= (t ** 2):
+                    if ((rx - p1[0]) ** 2) + ((ry - p1[1]) ** 2) <= (t ** 2):
                         return True
                     # Check if the point is inside of the polygon
                     elif not check_inside:
                         collision = False
-                        break
+                        continue
                     vx, vy = self.obstacles[i][(j+1) % len(self.obstacles[i])]
                     new_direction = atan2(vy - ry, vx - rx)
                     new_direction = new_direction if new_direction >= 0.0 else (new_direction + 2.0 * pi)
@@ -108,8 +110,9 @@ class ObstacleMap:
                 if collision:
                     return True
                 else:
+                    # Check if the point is within a certain distance of an edge
                     for j in range(len(self.obstacles[i])):
-                        x0, y0 = (point[1], point[0])
+                        x0, y0 = (rx, ry)
                         x1, y1 = self.obstacles[i][j]
                         x2, y2 = self.obstacles[i][(j + 1) % len(self.obstacles[i])]
                         d = abs((y2 - y1)*x0 - (x2 - x1)*y0 + x2*y1 - y2*x1)/sqrt((y2-y1)**2 + (x2-x1)**2)

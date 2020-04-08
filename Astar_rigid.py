@@ -8,19 +8,23 @@ from obstacleMap import ObstacleMap
 
 
 class Robot:
+    """
+    Robot class
+
+    Attributes
+    ----------
+    start: Same as init argument start
+    goal: Same as init argument goal
+    openList: List of coordinates pending exploration, in the form: [(y, x, orientation), cost, action]
+    openGrid: Matrix storing "1" for cells pending exploration, and "0" otherwise
+    closeGrid: Matrix storing "1" for cells that have been explored, and "0" otherwise
+    actionGrid: Matrix storing the optimal movement policy for cells that have been explored, and 255 otherwise
+    """
     def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None, play=False):
         """
         Initialization of the robot.
         :param start: starting coordinates for the robot, in tuple form (y, x, t)
         :param goal: goal coordinates for the robot, in tuple form (y, x)
-        Attributes:
-            start: Same as init argument start
-            goal: Same as init argument goal
-            openList: List of coordinates pending exploration, in the form: [(y, x, orientation), cost, action]
-            openGrid: Matrix storing "1" for cells pending exploration, and "0" otherwise
-            closeGrid: Matrix storing "1" for cells that have been explored, and "0" otherwise
-            actionGrid: Matrix storing the optimal movement policy for cells that have been explored, and 255 otherwise
-            backTrack: User-friendly visualization of the optimal path
         """
         self.res = 2  # Resolution of matrix for tracking duplicate states
         self.theta = 30  # Angle between action steps
@@ -39,7 +43,8 @@ class Robot:
         # Handle radius and clearance arguments
         self.radius = radius
         self.clearance = clearance
-        self.map = ObstacleMap(self.radius + self.clearance)
+        t = self.radius + self.clearance
+        self.map = ObstacleMap(t)
         if self.radius < 0:
             sys.stdout.write("\nRadius is negative.  Exiting...\n")
             exit(0)
@@ -50,10 +55,10 @@ class Robot:
             sys.stdout.write("\nRadius is zero.  This is a point robot with clearance %d." % self.clearance)
 
         # Check to see if start and goal cells lie within map boundaries
-        if not (0 <= self.start[0] < self.map.height) or not (0 <= self.start[1] < self.map.width):
+        if not (t <= self.start[0] < self.map.height - t) or not (t <= self.start[1] < self.map.width - t):
             sys.stdout.write("\nStart lies outside of map boundaries!\n")
             exit(0)
-        elif not (0 <= self.goal[0] < self.map.height) or not (0 <= self.goal[1] < self.map.width):
+        elif not (t <= self.goal[0] < self.map.height - t) or not (t <= self.goal[1] < self.map.width - t):
             sys.stdout.write("\nGoal lies outside of map boundaries!\n")
             exit(0)
 
@@ -200,7 +205,7 @@ class Robot:
             path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
-                         (next_cell[1], next_cell[0]), (64, 192, 255), thickness=1 + self.radius * self.res)
+                         (next_cell[1], next_cell[0]), (64, 192, 255), thickness=1 + 2 * self.radius * self.res)
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
@@ -235,7 +240,8 @@ class Robot:
             for i in range(len(path_points)):
                 next_image = np.copy(self.baseImage)
                 self.draw_robot_and_goal(path_points[i], next_image, rim=False)
-                writer.write(next_image)
+                for j in range(min(1 + self.step // 5, 5)):
+                    writer.write(next_image)
             for i in range(150):
                 writer.write(next_image)
             if self.play:
