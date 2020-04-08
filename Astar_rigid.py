@@ -30,6 +30,7 @@ class Robot:
         self.start = (199 - start[1], start[0], (-start[2] // self.theta) % (360 // self.theta))
         goal_2 = (-theta_g // self.theta) % (360 // self.theta) if theta_g is not None else None
         self.goal = (199 - goal[1], goal[0], goal_2)  # Goal coordinates
+        self.lastPosition = (-1, -1, -1)  # Coordinates of ending position (will be within certain tolerance of goal)
         self.success = True
         self.step = step
         self.goal_threshold = self.step * 1.5
@@ -88,7 +89,7 @@ class Robot:
         self.pathImage[self.obstacleIndices] = (128, 128, 128)
         self.pathImage[self.freeIndices] = (192, 192, 192)
         self.baseImage = np.copy(self.pathImage)
-        self.draw_start_and_goal(self.start, self.pathImage)
+        self.draw_robot_and_goal(self.start, self.pathImage)
         self.frames = [np.copy(self.pathImage)]
         self.play = play
 
@@ -121,7 +122,7 @@ class Robot:
 
             # See if goal cell has been reached (with threshold condition)
             if self.on_goal(cell):
-                self.goal = cell
+                self.lastPosition = cell
                 self.openList = []
 
             # Expand cell
@@ -191,12 +192,12 @@ class Robot:
         else:
             sys.stdout.write("\n\nGoal reached!  If you receive an error below related to FFmpeg, but the output "
                              "video plays, you may disregard the error.\n\n")
-            goal_y = int(self.goal[0] * self.res)
-            goal_x = int(self.goal[1] * self.res)
-            goal_r = self.goal[2]
+            goal_y = int(self.lastPosition[0] * self.res)
+            goal_x = int(self.lastPosition[1] * self.res)
+            goal_r = self.lastPosition[2]
             current_cell = (goal_y, goal_x, goal_r)
             next_cell = tuple(self.parentGrid[current_cell])
-            path_points = [(int(self.goal[0]), int(self.goal[1]), self.goal[2])]
+            path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
                          (next_cell[1], next_cell[0]), (64, 192, 255), thickness=1 + self.radius * self.res)
@@ -205,7 +206,7 @@ class Robot:
                 next_cell = tuple(self.parentGrid[next_cell])
             path_points.reverse()
             self.frames.append(np.copy(self.pathImage))
-            self.draw_start_and_goal(self.start, self.pathImage, start_only=True)
+            self.draw_robot_and_goal(self.start, self.pathImage, start_only=True)
 
         # Create output video
         writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('H', '2', '6', '4'), 30,
@@ -233,7 +234,7 @@ class Robot:
             next_image = np.copy(self.baseImage)
             for i in range(len(path_points)):
                 next_image = np.copy(self.baseImage)
-                self.draw_start_and_goal(path_points[i], next_image, rim=False)
+                self.draw_robot_and_goal(path_points[i], next_image, rim=False)
                 writer.write(next_image)
             for i in range(150):
                 writer.write(next_image)
@@ -247,28 +248,41 @@ class Robot:
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
         return result and (True if self.goal[2] is None else self.goal[2] == point[2])
 
-    def draw_start_and_goal(self, robot_pos, image, start_only=False, rim=True):
-        # Draw robot
-        points = [(robot_pos, (0, 0, 255))]
-        index = 0
-        if not start_only:
-            points.append((self.goal, (0, 192, 0)))
+    def draw_robot_and_goal(self, robot_pos, image, start_only=False, rim=True):
+        """
+        Draws the robot and goal positions.
+
+        Parameters
+        ----------
+        robot_pos: tuple
+            Position at which to draw the robot
+        image: np.array
+            Image on which to draw the robot and goal
+        start_only: bool, optional
+            Whether to draw the start position or not.  Defaults to False.
+        rim: bool, optional
+            Whether to draw the rim around the robot's start position.  Defaults to True.  The goal always has a rim.
+        """
+        points = [(self.goal, (0, 192, 0))] if not start_only else []
+        points.append((robot_pos, (0, 0, 255)))
+        goal = len(points) - 1
         for pt, col in points:
-            if rim or index:
-                cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), self.radius * self.res + 4,
+            rad = int(self.radius + (self.goal_threshold if goal else 0.0))
+            if rim or goal:
+                cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), rad * self.res + 4,
                            col, 1)
-            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), self.radius * self.res,
+            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), rad * self.res,
                        col, -1)
             if pt[2] is not None:
-                s_arrow = [[int((pt[1]+(self.radius+2)*cos((pt[2]*self.theta + 45)*pi/180)) * self.res),
-                            int((pt[0]+(self.radius+2)*sin((pt[2]*self.theta + 45)*pi/180)) * self.res)],
-                           [int((pt[1]+(self.radius+2)*1.4*cos(pt[2]*self.theta*pi/180)) * self.res),
-                            int((pt[0]+(self.radius+2)*1.4*sin(pt[2]*self.theta*pi/180)) * self.res)],
-                           [int((pt[1]+(self.radius+2)*cos((pt[2]*self.theta - 45)*pi/180)) * self.res),
-                            int((pt[0]+(self.radius+2)*sin((pt[2]*self.theta - 45)*pi/180)) * self.res)]]
+                s_arrow = [[int((pt[1]+(rad+2)*cos((pt[2]*self.theta + 45)*pi/180)) * self.res),
+                            int((pt[0]+(rad+2)*sin((pt[2]*self.theta + 45)*pi/180)) * self.res)],
+                           [int((pt[1]+(rad+2)*1.4*cos(pt[2]*self.theta*pi/180)) * self.res),
+                            int((pt[0]+(rad+2)*1.4*sin(pt[2]*self.theta*pi/180)) * self.res)],
+                           [int((pt[1]+(rad+2)*cos((pt[2]*self.theta - 45)*pi/180)) * self.res),
+                            int((pt[0]+(rad+2)*sin((pt[2]*self.theta - 45)*pi/180)) * self.res)]]
                 polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
                 cv2.polylines(image, [polygon], False, col, thickness=1)
-            index += 1
+            goal -= 1
 
 
 if __name__ == '__main__':
