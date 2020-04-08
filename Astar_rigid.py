@@ -26,13 +26,13 @@ class Robot:
         :param start: starting coordinates for the robot, in tuple form (y, x, t)
         :param goal: goal coordinates for the robot, in tuple form (y, x)
         """
-        self.res = 2  # Resolution of matrix for tracking duplicate states
+        self.res = 2.0  # Resolution of matrix for tracking duplicate states
         self.theta = 30  # Angle between action steps
         # Structure of self.actions:  (Distance, angle in units of self.theta, cost)
         self.actions = [[step, (i-2) % (360 // self.theta), 1] for i in range(5)]
         # Starting node in tuple form (y, x, orientation)
-        self.start = (199 - start[1], start[0], (-start[2] // self.theta) % (360 // self.theta))
-        goal_2 = (-theta_g // self.theta) % (360 // self.theta) if theta_g is not None else None
+        self.start = (199 - start[1], start[0], (-int(start[2]) // self.theta) % (360 // self.theta))
+        goal_2 = (-int(theta_g) // self.theta) % (360 // self.theta) if theta_g is not None else None
         self.goal = (199 - goal[1], goal[0], goal_2)  # Goal coordinates
         self.lastPosition = (-1, -1, -1)  # Coordinates of ending position (will be within certain tolerance of goal)
         self.success = True
@@ -112,7 +112,7 @@ class Robot:
         """
         # Initialize the open list/grid with the start cell
         self.openList = [[self.start, 0]]  # [point, cost, action]
-        self.openGrid[self.start[0] * self.res, self.start[1] * self.res, self.start[2]] = 1
+        self.openGrid[int(round(self.start[0] * self.res)), int(round(self.start[1] * self.res)), self.start[2]] = 1
         path_points = []
         sys.stdout.write("\nSearching for optimal path...\n")
         explored_count = 0
@@ -174,7 +174,7 @@ class Robot:
                 parent_cell = (parent_cell[1], parent_cell[0])
                 cv2.line(self.pathImage, (int(cell[1] * self.res), int(cell[0] * self.res)),
                          parent_cell, line_color)
-            if explored_count % 10 == 0 or len(self.openList) == 0 and self.success:  # Display every 100 frames
+            if explored_count % 10 == 0 or len(self.openList) == 0 and self.success:  # Display every 10 frames
                 self.frames.append(np.copy(self.pathImage))
 
             explored_count += 1
@@ -210,7 +210,8 @@ class Robot:
             path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
-                         (next_cell[1], next_cell[0]), self.colors["path"], thickness=1 + 2 * self.radius * self.res)
+                         (next_cell[1], next_cell[0]), self.colors["path"],
+                         thickness=int(1 + 2 * self.radius * self.res))
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
@@ -245,7 +246,7 @@ class Robot:
             for i in range(len(path_points)):
                 next_image = np.copy(self.baseImage)
                 self.draw_robot_and_goal(path_points[i], next_image, rim=False)
-                for j in range(min(1 + self.step // 5, 5)):
+                for j in range(min(1 + int(self.step) // 5, 5)):
                     writer.write(next_image)
             for i in range(150):
                 writer.write(next_image)
@@ -280,9 +281,9 @@ class Robot:
         for pt, col in points:
             rad = int(self.radius + (self.goal_threshold if goal else 0.0))
             if rim or goal:
-                cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), rad * self.res + 4,
+                cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), int(rad * self.res + 4),
                            col, 1)
-            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), rad * self.res,
+            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), int(rad * self.res),
                        col, -1)
             if pt[2] is not None:
                 s_arrow = [[int((pt[1]+(rad+2)*cos((pt[2]*self.theta + 45)*pi/180)) * self.res),
@@ -301,16 +302,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Project-3 -- Phase-2:  Navigation of a rigid robot from a start point"
                     "to an end point using A* algorithm.")
-    parser.add_argument('initialX', type=int, help='X-coordinate of initial node of the robot')
-    parser.add_argument('initialY', type=int, help='Y-coordinate of initial node of the robot')
-    parser.add_argument('theta_s', type=int, help='Start point orientation of the robot')
-    parser.add_argument('goalX', type=int, help='X-coordinate of goal node of the robot')
-    parser.add_argument('goalY', type=int, help='Y-coordinate of goal node of the robot')
-    parser.add_argument('radius', type=int, help='Indicates the radius of the rigid robot')
-    parser.add_argument("clearance", type=int,
+    parser.add_argument('initialX', type=float, help='X-coordinate of initial node of the robot')
+    parser.add_argument('initialY', type=float, help='Y-coordinate of initial node of the robot')
+    parser.add_argument('theta_s', type=float, help='Start point orientation of the robot')
+    parser.add_argument('goalX', type=float, help='X-coordinate of goal node of the robot')
+    parser.add_argument('goalY', type=float, help='Y-coordinate of goal node of the robot')
+    parser.add_argument('radius', type=float, help='Indicates the radius of the rigid robot')
+    parser.add_argument("clearance", type=float,
                         help="Indicates the minimum required clearance between the rigid robot and obstacles")
-    parser.add_argument('step', type=int, help='Indicates the step size of the robot')
-    parser.add_argument('--theta_g', type=int, help='Goal point orientation of the robot.  Omit for any orientation.')
+    parser.add_argument('step', type=float, help='Indicates the step size of the robot')
+    parser.add_argument('--theta_g', type=float, help='Goal point orientation of the robot.  Omit for any orientation.')
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
