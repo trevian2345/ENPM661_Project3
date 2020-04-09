@@ -351,7 +351,7 @@ class Robot:
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        description="Project-3 -- Phase-2:  Navigation of a rigid robot from a start point"
+        description="Project-3 -- Phase-2:  Navigation of a rigid robot from a start point "
                     "to an end point using A* algorithm.")
     parser.add_argument('initialX', type=float, help='X-coordinate of initial node of the robot')
     parser.add_argument('initialY', type=float, help='Y-coordinate of initial node of the robot')
