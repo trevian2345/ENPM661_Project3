@@ -43,8 +43,8 @@ class ObstacleMap:
         points = np.array([[4.25, 0.25],
                            [5.75, 1.75]], dtype=np.float64)
         self.obstacles.append(points)
-        points = np.array([[2.25, 1.25],
-                           [2.75, 2.75]], dtype=np.float64)
+        points = np.array([[1.25, 2.25],
+                           [2.75, 3.75]], dtype=np.float64)
         self.obstacles.append(points)
         points = np.array([[4.25, 8.25],
                            [5.75, 9.75]], dtype=np.float64)
@@ -79,7 +79,7 @@ class ObstacleMap:
                     return True
             # Circle
             else:
-                cy, cx, cr = obs[0]
+                cy, cx, cr = obs
                 if sqrt((cx - px) ** 2 + (cy - py) ** 2) <= cr:
                     return True
         return False
@@ -131,7 +131,7 @@ class ObstacleMap:
 
             # Circles - check if centers are closer than the sum of the radii
             else:
-                py, px, pr = obs[0]
+                py, px, pr = obs
                 if sqrt((px - cx) ** 2 + (py - cy) ** 2) < (pr + cr):
                     return True
         return False

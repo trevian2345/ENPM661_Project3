@@ -25,8 +25,10 @@ class Robot:
         Matrix storing "1" for cells that have been explored, and "0" otherwise
     actionGrid: np.array
         Matrix storing the optimal movement policy for cells that have been explored, and 255 otherwise
+    i_res: float
+        Resolution of images for generating visualization
     """
-    def __init__(self, start, goal, radius, clearance, step=1, theta_g=None, hw=None, play=False):
+    def __init__(self, start, goal, rpm1, rpm2, hw=None, play=False):
         """
         Initialization of the robot.
 
@@ -36,60 +38,62 @@ class Robot:
             starting coordinates for the robot, in tuple form (y, x, t)
         goal: tuple of float
             goal coordinates for the robot, in tuple form (y, x)
-        radius: float
-            Robot radius
-        clearance: float
-            Robot minimum clearance from obstacles
-        step: float
-            Robot forward step size
-        theta_g: float, optional
-            Optional goal theta
         hw: float, optional
             Heuristic weight
         play: bool, optional
             Whether to play using OpenCV's imshow()
         """
-        self.res = 2.0  # Resolution of matrix for tracking duplicate states
-        self.theta = 30  # Angle between action steps
-        # Structure of self.actions:  (Distance, angle in units of self.theta, cost)
-        self.actions = [[step, (i-2) % (360 // self.theta), 1] for i in range(5)]
+        self.res = 0.1  # Resolution of matrix for tracking duplicate states
+        self.i_res = 0.02  # Resolution for visualizations
+        self.theta = 30  # Resolution of robot orientation for differentiation of action steps
+        self.dt = 0.5  # Time between actions
+        self.wr = 0.038  # Wheel radius, in meters (see data sheet)
+        self.rpm1 = rpm1
+        self.rpm2 = rpm2
+        self.radius = 0.177  # Robot radius (see data sheet)
+        self.clearance = 0.05  # 5 cm clearance, just in case
+        self.map = ObstacleMap(self.radius + self.clearance)
+
+        # Handle RPM arguments
+        if self.rpm1 < 0:
+            sys.stdout.write("\nRPM1 is negative.  Exiting...\n")
+            exit(0)
+        elif self.rpm2 < 0:
+            sys.stdout.write("\nRPM2 is negative.  Exiting...\n")
+            exit(0)
+
+        # Structure of self.actions:  [rpm of left wheel, rpm of right wheel]
+        self.actions = [[0, rpm1],
+                        [rpm1, 0],
+                        [rpm1, rpm1],
+                        [0, rpm2],
+                        [rpm2, 0],
+                        [rpm2, rpm2],
+                        [rpm1, rpm2],
+                        [rpm2, rpm1]]
+
         # Starting node in tuple form (y, x, orientation)
-        self.start = (199 - start[1], start[0], (-int(start[2]) // self.theta) % (360 // self.theta))
-        goal_2 = (-int(theta_g) // self.theta) % (360 // self.theta) if theta_g is not None else None
-        self.goal = (199 - goal[1], goal[0], goal_2)  # Goal coordinates
+        self.start = (self.map.height - start[1], start[0], (-int(start[2]) // self.theta) % (360 // self.theta))
+        self.goal = (self.map.height - goal[1], goal[0])  # Goal coordinates
         self.lastPosition = (-1, -1, -1)  # Coordinates of ending position (will be within certain tolerance of goal)
         self.success = True
-        self.step = step
-        self.goal_threshold = self.step * 1.5
-        self.hw = hw if hw is not None else 2.0  # Heuristic weight (set to 1.0 for optimal path or 0.0 for Dijkstra)
+
+        # Goal threshold:  minimum distance that can be covered in one action step
+        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr
+
+        # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
+        self.hw = hw if hw is not None else 2.0
 
         # Output arguments
         sys.stdout.write("\nThe following parameters have been provided:")
-        sys.stdout.write("\n    Robot start:  x = %.1f, y = %.1f, theta = %d deg" %
+        sys.stdout.write("\n    Robot start:  x = %.2f, y = %.2f, theta = %d degrees" %
                          (start[0], start[1], (int(360 - self.start[2] * self.theta) % 360)))
-        sys.stdout.write("\n    Robot goal:  x = %.1f, y = %.1f" % (goal[0], goal[1]))
-        if self.goal[2] is not None:
-            sys.stdout.write(", theta = %d deg" % (int(360 - self.goal[2] * self.theta) % 360))
-        sys.stdout.write("\n    Robot radius:  %.1f" % radius)
-        sys.stdout.write("\n    Robot clearance:  %.1f" % clearance)
-        sys.stdout.write("\n    Robot step size:  %.1f" % self.step)
+        sys.stdout.write("\n    Robot goal:  x = %.2f, y = %.2f" % (goal[0], goal[1]))
+        sys.stdout.write("\n    Wheel RPMs:  %.2f (low) and %.2f (high)" % (self.rpm1, self.rpm2))
         sys.stdout.write("\n    Heuristic weight:  %.2f\n" % self.hw)
 
-        # Handle radius and clearance arguments
-        self.radius = radius
-        self.clearance = clearance
-        t = self.radius + self.clearance
-        self.map = ObstacleMap(t)
-        if self.radius < 0:
-            sys.stdout.write("\nRadius is negative.  Exiting...\n")
-            exit(0)
-        elif self.clearance < 0:
-            sys.stdout.write("\nClearance is negative.  Exiting...\n")
-            exit(0)
-        if self.radius == 0:
-            sys.stdout.write("\nRadius is zero.  This is a point robot with clearance %d." % self.clearance)
-
         # Check to see if start and goal cells lie within map boundaries
+        t = self.radius + self.clearance
         if not (t <= self.start[0] < self.map.height - t) or not (t <= self.start[1] < self.map.width - t):
             sys.stdout.write("\nStart lies outside of map boundaries!\n")
             exit(0)
@@ -98,17 +102,17 @@ class Robot:
             exit(0)
 
         # Check to see if start and goal cells are in free spaces
-        elif self.map.is_colliding(self.start):
+        if self.map.collision_circle((self.start[0], self.start[1], self.radius)):
             sys.stdout.write("\nStart lies within obstacle space!\n")
             exit(0)
-        elif self.map.is_colliding(self.goal):
+        if self.map.collision_circle((self.goal[0], self.goal[1], self.radius)):
             sys.stdout.write("\nGoal lies within obstacle space!\n")
             exit(0)
 
         # Define cell maps to track exploration
         self.openList = []  # List of coordinates to be explored, in the form: [(y, x, t), cost, action]
-        self.configSpace = np.zeros((int(ceil(self.map.height * self.res)),
-                                     int(ceil(self.map.width * self.res)), 360 // self.theta), dtype=np.uint8)
+        self.configSpace = np.zeros((int(ceil(self.map.height / self.res)),
+                                     int(ceil(self.map.width / self.res)), 360 // self.theta), dtype=np.uint8)
         self.openGrid = np.zeros_like(self.configSpace)  # Grid of cells pending exploration
         self.closeGrid = np.zeros_like(self.configSpace, dtype=np.uint8)  # Grid of explored cells
         # Grid containing parent cells
@@ -117,25 +121,30 @@ class Robot:
         # Grid containing movement policy
         self.actionGrid = np.zeros_like(self.parentGrid, np.float32)
 
-        # Visualization image
-        self.pathImage = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1], 3),
-                                  dtype=np.uint8)
-        sys.stdout.write("\nCreating state space matrices...")
-        obstacle_space = np.array([[self.map.is_colliding((i / self.res, j / self.res), thickness=0)
+        # State matrices
+        sys.stdout.write("\nCreating state space matrices and base illustrations...")
+        blocked_states = np.array([[self.map.collision_point((i * self.res, j * self.res))
                                     for j in range(self.configSpace.shape[1])]
                                    for i in range(self.configSpace.shape[0])], dtype=np.uint8)
-        self.obstacleIndices = np.where(obstacle_space)
-        self.freeIndices = np.where(1 - obstacle_space)
-        self.freeCount = int(np.sum(1 - obstacle_space) * self.configSpace.shape[2])
+        self.obstacleIndices = np.where(blocked_states)
+        self.freeCount = int(np.sum(1 - blocked_states) * self.configSpace.shape[2])
+
+        # Visualization images
+        self.imageShape = (int(round(self.map.height / self.i_res)), int(round(self.map.width / self.i_res)), 3)
+        self.pathImage = np.zeros(self.imageShape, dtype=np.uint8)
+        blocked_pixels = np.array([[self.map.collision_point((i * self.i_res, j * self.i_res))
+                                    for j in range(self.imageShape[1])]
+                                   for i in range(self.imageShape[0])], dtype=np.uint8)
         self.colors = {"free": (192, 192, 192),
                        "obstacle": (128, 128, 128),
                        "robot": (0, 0, 255),
                        "goal": (0, 192, 0),
                        "path": (64, 192, 255)}
-        self.pathImage[self.obstacleIndices] = self.colors["obstacle"]
-        self.pathImage[self.freeIndices] = self.colors["free"]
+        self.pathImage[np.where(blocked_pixels)] = self.colors["obstacle"]
+        self.pathImage[np.where(1 - blocked_pixels)] = self.colors["free"]
         self.baseImage = np.copy(self.pathImage)
-        self.draw_robot_and_goal(self.start, self.pathImage)
+        self.draw_robot(self.start, self.pathImage)
+        self.draw_goal(self.goal, self.pathImage)
         self.frames = [np.copy(self.pathImage)]
         self.play = play
 
@@ -148,7 +157,7 @@ class Robot:
         """
         # Initialize the open list/grid with the start cell
         self.openList = [[self.start, 0]]  # [point, cost, action]
-        self.openGrid[int(round(self.start[0] * self.res)), int(round(self.start[1] * self.res)), self.start[2]] = 1
+        self.openGrid[int(self.start[0] / self.res), int(self.start[1] / self.res), self.start[2]] = 1
         path_points = []
         sys.stdout.write("\nSearching for optimal path...\n")
         explored_count = 0
@@ -184,31 +193,31 @@ class Robot:
                         # Check for obstacles
                         if not self.map.is_colliding((ny, nx), check_inside=(self.radius+self.clearance <= self.step)):
                             # Check whether cell has been explored
-                            if not self.closeGrid[int(ny * self.res), int(nx * self.res), nt]:
+                            if not self.closeGrid[int(ny / self.res), int(nx / self.res), nt]:
                                 # Check if cell is already pending exploration
-                                if not self.openGrid[int(ny * self.res), int(nx * self.res), nt]:
+                                if not self.openGrid[int(ny / self.res), int(nx / self.res), nt]:
                                     self.openList.append([next_cell, cost + self.step])
-                                    parent = [int(cell[0] * self.res), int(cell[1] * self.res), cell[2]]
-                                    self.parentGrid[int(ny * self.res), int(nx * self.res), nt] = parent
+                                    parent = [int(cell[0] / self.res), int(cell[1] / self.res), cell[2]]
+                                    self.parentGrid[int(ny / self.res), int(nx / self.res), nt] = parent
                                     action = [cell[0], cell[1], cell[2]]
-                                    self.actionGrid[int(ny * self.res), int(nx * self.res), nt] = action
-                                    self.openGrid[int(ny * self.res), int(nx * self.res), nt] = 1
+                                    self.actionGrid[int(ny / self.res), int(nx / self.res), nt] = action
+                                    self.openGrid[int(ny / self.res), int(nx / self.res), nt] = 1
 
                 self.openList.pop(index)
                 if len(self.openList) == 0:
                     self.success = False
 
             # Mark the cell as having been explored
-            self.openGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 0
-            self.closeGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]] = 1
+            self.openGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]] = 0
+            self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]] = 1
 
             # Update visualization
-            line_color = np.sum(self.closeGrid[int(cell[0] * self.res), int(cell[1] * self.res)])
+            line_color = np.sum(self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res)])
             line_color = (255, int(255 - (1.0 - line_color / (360 / self.theta)) * 192), 64)
             if explored_count > 0:
-                parent_cell = tuple(self.parentGrid[int(cell[0] * self.res), int(cell[1] * self.res), cell[2]][:2])
+                parent_cell = tuple(self.parentGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]][:2])
                 parent_cell = (parent_cell[1], parent_cell[0])
-                cv2.line(self.pathImage, (int(cell[1] * self.res), int(cell[0] * self.res)),
+                cv2.line(self.pathImage, (int(cell[1] / self.res), int(cell[0] / self.res)),
                          parent_cell, line_color)
             if explored_count % 10 == 0 or len(self.openList) == 0 and self.success:  # Display every 10 frames
                 self.frames.append(np.copy(self.pathImage))
@@ -237,8 +246,8 @@ class Robot:
         # Backtracking from the goal cell to extract an optimal path
         else:
             sys.stdout.write("\n\nGoal reached!\n")
-            goal_y = int(self.lastPosition[0] * self.res)
-            goal_x = int(self.lastPosition[1] * self.res)
+            goal_y = int(self.lastPosition[0] / self.res)
+            goal_x = int(self.lastPosition[1] / self.res)
             goal_r = self.lastPosition[2]
             current_cell = (goal_y, goal_x, goal_r)
             next_cell = tuple(self.parentGrid[current_cell])
@@ -246,7 +255,7 @@ class Robot:
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
                          (next_cell[1], next_cell[0]), self.colors["path"],
-                         thickness=int(1 + 2 * self.radius * self.res))
+                         thickness=int(1 + 2 * self.radius / self.res))
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
@@ -256,7 +265,7 @@ class Robot:
 
         # Create output video
         writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('a', 'v', 'c', '1'), 30,
-                                 (int(self.map.width * self.res), int(self.map.height * self.res)))
+                                 (int(self.map.width / self.res), int(self.map.height / self.res)))
         window_name = "Animation"
         for i in range(150):
             writer.write(self.frames[0])
@@ -311,78 +320,90 @@ class Robot:
         result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
         return result and (True if self.goal[2] is None else self.goal[2] == point[2])
 
-    def draw_robot_and_goal(self, robot_pos, image, start_only=False, rim=True):
+    def next_position(self, rot, rpm1, rpm2):
+        return
+
+    def draw_goal(self, goal_pos, image):
         """
-        Draws the robot and goal positions.
+        Draws the robot at the indicated position.
+
+        Parameters
+        ----------
+        goal_pos: tuple
+            Position at which to draw the goal
+        image: np.array
+            Image on which to draw the goal
+        """
+        gy, gx = goal_pos
+        rad = self.radius + self.goal_threshold
+        cv2.circle(image, (int(gx / self.i_res), int(gy / self.i_res)), int(rad / self.i_res), self.colors["goal"],
+                   thickness=cv2.FILLED)
+        rim = 1.2
+        cv2.circle(image, (int(gx / self.i_res), int(gy / self.i_res)), int(rad * rim / self.i_res),
+                   self.colors["goal"])
+
+    def draw_robot(self, robot_pos, image):
+        """
+        Draws the robot at the indicated position.
 
         Parameters
         ----------
         robot_pos: tuple
             Position at which to draw the robot
         image: np.array
-            Image on which to draw the robot and goal
-        start_only: bool, optional
-            Whether to draw the start position or not.  Defaults to False.
-        rim: bool, optional
-            Whether to draw the rim around the robot's start position.  Defaults to True.  The goal always has a rim.
+            Image on which to draw the robot
         """
-        points = [(self.goal, self.colors["goal"])] if not start_only else []
-        points.append((robot_pos, self.colors["robot"]))
-        goal = len(points) - 1
-        for pt, col in points:
-            rad = int(self.radius + (self.goal_threshold if goal else 0.0))
-            if rim or goal:
-                cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), int(rad * self.res + 4),
-                           col, 1)
-            cv2.circle(image, (int(pt[1] * self.res), int(pt[0] * self.res)), int(rad * self.res),
-                       col, -1)
-            if pt[2] is not None:
-                s_arrow = [[int((pt[1]+(rad+2)*cos((pt[2]*self.theta + 45)*pi/180)) * self.res),
-                            int((pt[0]+(rad+2)*sin((pt[2]*self.theta + 45)*pi/180)) * self.res)],
-                           [int((pt[1]+(rad+2)*1.4*cos(pt[2]*self.theta*pi/180)) * self.res),
-                            int((pt[0]+(rad+2)*1.4*sin(pt[2]*self.theta*pi/180)) * self.res)],
-                           [int((pt[1]+(rad+2)*cos((pt[2]*self.theta - 45)*pi/180)) * self.res),
-                            int((pt[0]+(rad+2)*sin((pt[2]*self.theta - 45)*pi/180)) * self.res)]]
-                polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
-                cv2.polylines(image, [polygon], False, col, thickness=1)
-            goal -= 1
-        image[self.obstacleIndices] = self.colors["obstacle"]
+        ry, rx, rot = robot_pos
+        rad = self.radius
+        cv2.circle(image, (int(rx / self.i_res), int(ry / self.i_res)), int(rad / self.i_res), self.colors["robot"],
+                   thickness=cv2.FILLED)
+        cv2.circle(image, (int(rx / self.i_res), int(ry / self.i_res)), int(rad / self.i_res), (0, 0, 0),
+                   thickness=(1 + int(0.01 / self.i_res)))
+        rim = 1.2
+        s_arrow = [[int((rx+(rad*rim)*cos((rot*self.theta + 45)*pi/180)) / self.i_res),
+                    int((ry+(rad*rim)*sin((rot*self.theta + 45)*pi/180)) / self.i_res)],
+                   [int((rx+(rad*rim)*1.4*cos(rot*self.theta*pi/180)) / self.i_res),
+                    int((ry+(rad*rim)*1.4*sin(rot*self.theta*pi/180)) / self.i_res)],
+                   [int((rx+(rad*rim)*cos((rot*self.theta - 45)*pi/180)) / self.i_res),
+                    int((ry+(rad*rim)*sin((rot*self.theta - 45)*pi/180)) / self.i_res)]]
+        polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
+        cv2.polylines(image, [polygon], False, self.colors["robot"], thickness=1)
 
 
 def main(argv):
     parser = argparse.ArgumentParser(
         description="Project-3 -- Phase-2:  Navigation of a rigid robot from a start point "
                     "to an end point using A* algorithm.")
-    parser.add_argument('initialX', type=float, help='X-coordinate of initial node of the robot')
-    parser.add_argument('initialY', type=float, help='Y-coordinate of initial node of the robot')
-    parser.add_argument('theta_s', type=float, help='Start point orientation of the robot')
-    parser.add_argument('goalX', type=float, help='X-coordinate of goal node of the robot')
-    parser.add_argument('goalY', type=float, help='Y-coordinate of goal node of the robot')
-    parser.add_argument('radius', type=float, help='Indicates the radius of the rigid robot')
-    parser.add_argument("clearance", type=float,
-                        help="Indicates the minimum required clearance between the rigid robot and obstacles")
-    parser.add_argument('step', type=float, help='Indicates the step size of the robot')
-    parser.add_argument('--theta_g', type=float, help='Goal point orientation of the robot.  Omit for any orientation.')
+    parser.add_argument('start_x', type=float, help='X-coordinate of initial node of the robot')
+    parser.add_argument('start_y', type=float, help='Y-coordinate of initial node of the robot')
+    parser.add_argument('start_theta', type=float, help='Start point orientation of the robot')
+    parser.add_argument('goal_x', type=float, help='X-coordinate of goal node of the robot')
+    parser.add_argument('goal_y', type=float, help='Y-coordinate of goal node of the robot')
+    parser.add_argument('rpm1', type=float, help='Low RPM')
+    parser.add_argument('rpm2', type=float, help='High RPM')
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
     args = parser.parse_args(argv)
 
-    sx = args.initialX
-    sy = args.initialY
-    ts = args.theta_s
-    gx = args.goalX
-    gy = args.goalY
-    tg = args.theta_g
+    sx = args.start_x
+    sy = args.start_y
+    st = args.start_theta
+    gx = args.goal_x
+    gy = args.goal_y
+    rpm1 = args.rpm1
+    rpm2 = args.rpm2
     h_weight = args.hw
-    r = args.radius
-    c = args.clearance
-    s = args.step
     p = args.play
-    start_pos = (sx, sy, ts)
+    start_pos = (sx, sy, st)
     goal_pos = (gx, gy)
-    Robot(start_pos, goal_pos, r, c, s, theta_g=tg, hw=h_weight, play=p)
+    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, play=p)
 
 
 if __name__ == '__main__':
     main(sys.argv[1:])
+
+# TODO:  -----------------------------------------------------
+# TODO:  Define path obstruction tests
+# TODO:  Define new action set
+# TODO:  Update visuals
