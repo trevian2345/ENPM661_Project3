@@ -43,15 +43,16 @@ class Robot:
         play: bool, optional
             Whether to play using OpenCV's imshow()
         """
-        self.res = 0.1  # Resolution of matrix for tracking duplicate states
-        self.i_res = 0.02  # Resolution for visualizations
-        self.theta = 30  # Resolution of robot orientation for differentiation of action steps
+        self.res = 0.05  # Resolution of matrix for tracking duplicate states
+        self.i_res = 0.05  # Resolution for visualizations
+        self.theta = 15  # Resolution of robot orientation for differentiation of action steps
         self.dt = 0.5  # Time between actions
+        self.radius = 0.177  # Robot radius (see data sheet)
+        self.clearance = 0.05  # 5 cm clearance, just in case
+        self.w_axis = self.radius * 0.8  # Length of axis between wheels (assumed)
         self.wr = 0.038  # Wheel radius, in meters (see data sheet)
         self.rpm1 = rpm1
         self.rpm2 = rpm2
-        self.radius = 0.177  # Robot radius (see data sheet)
-        self.clearance = 0.05  # 5 cm clearance, just in case
         self.map = ObstacleMap(self.radius + self.clearance)
 
         # Handle RPM arguments
@@ -63,23 +64,23 @@ class Robot:
             exit(0)
 
         # Structure of self.actions:  [rpm of left wheel, rpm of right wheel]
-        self.actions = [[0, rpm1],
-                        [rpm1, 0],
-                        [rpm1, rpm1],
-                        [0, rpm2],
-                        [rpm2, 0],
+        self.actions = [#[0, rpm1],
+                        #[rpm1, 0],
+                        #[rpm1, rpm1],
+                        #[0, rpm2],
+                        #[rpm2, 0],
                         [rpm2, rpm2],
                         [rpm1, rpm2],
                         [rpm2, rpm1]]
 
         # Starting node in tuple form (y, x, orientation)
-        self.start = (self.map.height - start[1], start[0], (-int(start[2]) // self.theta) % (360 // self.theta))
+        self.start = (self.map.height - start[1], start[0], (-start[2] * pi / 180.0) % (2.0 * pi))
         self.goal = (self.map.height - goal[1], goal[0])  # Goal coordinates
         self.lastPosition = (-1, -1, -1)  # Coordinates of ending position (will be within certain tolerance of goal)
         self.success = True
 
         # Goal threshold:  minimum distance that can be covered in one action step
-        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr
+        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 1.1
 
         # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
         self.hw = hw if hw is not None else 2.0
@@ -89,7 +90,7 @@ class Robot:
         sys.stdout.write("\n    Robot start:  x = %.2f, y = %.2f, theta = %d degrees" %
                          (start[0], start[1], (int(360 - self.start[2] * self.theta) % 360)))
         sys.stdout.write("\n    Robot goal:  x = %.2f, y = %.2f" % (goal[0], goal[1]))
-        sys.stdout.write("\n    Wheel RPMs:  %.2f (low) and %.2f (high)" % (self.rpm1, self.rpm2))
+        sys.stdout.write("\n    Wheel RPMs:  %.2f and %.2f" % (self.rpm1, self.rpm2))
         sys.stdout.write("\n    Heuristic weight:  %.2f\n" % self.hw)
 
         # Check to see if start and goal cells lie within map boundaries
@@ -113,8 +114,13 @@ class Robot:
         self.openList = []  # List of coordinates to be explored, in the form: [(y, x, t), cost, action]
         self.configSpace = np.zeros((int(ceil(self.map.height / self.res)),
                                      int(ceil(self.map.width / self.res)), 360 // self.theta), dtype=np.uint8)
-        self.openGrid = np.zeros_like(self.configSpace)  # Grid of cells pending exploration
-        self.closeGrid = np.zeros_like(self.configSpace, dtype=np.uint8)  # Grid of explored cells
+
+        # Grid of cells pending exploration
+        self.openGrid = np.zeros_like(self.configSpace)
+
+        # Grid of explored cells
+        self.closeGrid = np.zeros_like(self.configSpace, dtype=np.uint8)
+
         # Grid containing parent cells
         self.parentGrid = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1],
                                     self.configSpace.shape[2], 3), dtype=np.int) - 1
@@ -140,11 +146,11 @@ class Robot:
                        "robot": (0, 0, 255),
                        "goal": (0, 192, 0),
                        "path": (64, 192, 255)}
-        self.pathImage[np.where(blocked_pixels)] = self.colors["obstacle"]
         self.pathImage[np.where(1 - blocked_pixels)] = self.colors["free"]
         self.baseImage = np.copy(self.pathImage)
-        self.draw_robot(self.start, self.pathImage)
         self.draw_goal(self.goal, self.pathImage)
+        self.pathImage[np.where(blocked_pixels)] = self.colors["obstacle"]
+        self.draw_robot(self.start, self.pathImage)
         self.frames = [np.copy(self.pathImage)]
         self.play = play
 
@@ -156,8 +162,9 @@ class Robot:
         Solves the puzzle.
         """
         # Initialize the open list/grid with the start cell
-        self.openList = [[self.start, 0]]  # [point, cost, action]
-        self.openGrid[int(self.start[0] / self.res), int(self.start[1] / self.res), self.start[2]] = 1
+        self.openList = [[self.start, 0]]  # [point, cost]
+        self.openGrid[int(self.start[0] / self.res), int(self.start[1] / self.res),
+                      int(self.start[2] * 180.0 / pi) // self.theta] = 1
         path_points = []
         sys.stdout.write("\nSearching for optimal path...\n")
         explored_count = 0
@@ -174,52 +181,54 @@ class Robot:
             index = int(np.argmin(cost_list, axis=0))
             cell = self.openList[index][0]
             cost = self.openList[index][1]
+            cell_theta_norm = int(cell[2] * 180.0 / pi) // self.theta
 
             # See if goal cell has been reached (with threshold condition)
             if self.on_goal(cell):
-                self.lastPosition = cell
+                self.lastPosition = (cell[0], cell[1], cell_theta_norm)
                 self.openList = []
 
             # Expand cell
             else:
                 for a in range(len(self.actions)):
-                    next_cell = (cell[0] + self.actions[a][0] * sin(self.theta*(self.actions[a][1] + cell[2])*pi/180),
-                                 cell[1] + self.actions[a][0] * cos(self.theta*(self.actions[a][1] + cell[2])*pi/180),
-                                 (cell[2] + self.actions[a][1]) % (360 // self.theta))
-                    ny, nx, nt = next_cell
+                    next_cell = self.next_position(cell, self.actions[a][0], self.actions[a][1])
+                    ny, nx, nt, arc_length = next_cell
+                    theta_norm = int(nt * 180.0 / pi) // self.theta
 
                     # Check for map boundaries
-                    if 0 <= ny < self.map.height and 0 <= nx < self.map.width:
+                    if 0.0 <= ny < self.map.height and 0.0 <= nx < self.map.width:
                         # Check for obstacles
-                        if not self.map.is_colliding((ny, nx), check_inside=(self.radius+self.clearance <= self.step)):
+                        if not self.map.collision_circle((ny, nx, self.radius)):
                             # Check whether cell has been explored
-                            if not self.closeGrid[int(ny / self.res), int(nx / self.res), nt]:
+                            if not self.closeGrid[int(ny / self.res), int(nx / self.res), theta_norm]:
                                 # Check if cell is already pending exploration
-                                if not self.openGrid[int(ny / self.res), int(nx / self.res), nt]:
-                                    self.openList.append([next_cell, cost + self.step])
-                                    parent = [int(cell[0] / self.res), int(cell[1] / self.res), cell[2]]
-                                    self.parentGrid[int(ny / self.res), int(nx / self.res), nt] = parent
+                                if not self.openGrid[int(ny / self.res), int(nx / self.res), theta_norm]:
+                                    self.openList.append([(ny, nx, nt), cost + arc_length])
+                                    parent = [int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm]
+                                    self.parentGrid[int(ny / self.res), int(nx / self.res), theta_norm] = parent
                                     action = [cell[0], cell[1], cell[2]]
-                                    self.actionGrid[int(ny / self.res), int(nx / self.res), nt] = action
-                                    self.openGrid[int(ny / self.res), int(nx / self.res), nt] = 1
+                                    self.actionGrid[int(ny / self.res), int(nx / self.res), theta_norm] = action
+                                    self.openGrid[int(ny / self.res), int(nx / self.res), theta_norm] = 1
 
                 self.openList.pop(index)
                 if len(self.openList) == 0:
                     self.success = False
 
             # Mark the cell as having been explored
-            self.openGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]] = 0
-            self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]] = 1
+            self.openGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm] = 0
+            self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm] = 1
 
             # Update visualization
             line_color = np.sum(self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res)])
             line_color = (255, int(255 - (1.0 - line_color / (360 / self.theta)) * 192), 64)
             if explored_count > 0:
-                parent_cell = tuple(self.parentGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell[2]][:2])
-                parent_cell = (parent_cell[1], parent_cell[0])
-                cv2.line(self.pathImage, (int(cell[1] / self.res), int(cell[0] / self.res)),
+                parent_cell = tuple(self.parentGrid[int(cell[0] / self.res), int(cell[1] / self.res),
+                                                    cell_theta_norm][:2])
+                parent_cell = (int(parent_cell[1] * self.res / self.i_res), int(parent_cell[0] * self.res / self.i_res))
+                # TODO:  Draw an arc instead of a line.
+                cv2.line(self.pathImage, (int(cell[1] / self.i_res), int(cell[0] / self.i_res)),
                          parent_cell, line_color)
-            if explored_count % 10 == 0 or len(self.openList) == 0 and self.success:  # Display every 10 frames
+            if explored_count % 10 == 0 or (len(self.openList) == 0 and self.success):  # Display every 10 frames
                 self.frames.append(np.copy(self.pathImage))
 
             explored_count += 1
@@ -252,20 +261,24 @@ class Robot:
             current_cell = (goal_y, goal_x, goal_r)
             next_cell = tuple(self.parentGrid[current_cell])
             path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
+            self.draw_goal(self.goal, self.pathImage)
+            self.pathImage[self.obstacleIndices] = self.colors["obstacle"]
             while sum(next_cell) >= 0:
-                cv2.line(self.pathImage, (current_cell[1], current_cell[0]),
-                         (next_cell[1], next_cell[0]), self.colors["path"],
+                cv2.line(self.pathImage, (int(current_cell[1] * self.res / self.i_res),
+                                          int(current_cell[0] * self.res / self.i_res)),
+                         (int(next_cell[1] * self.res / self.i_res),
+                          int(next_cell[0] * self.res / self.i_res)), self.colors["path"],
                          thickness=int(1 + 2 * self.radius / self.res))
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
             path_points.reverse()
             self.frames.append(np.copy(self.pathImage))
-            self.draw_robot_and_goal(self.start, self.pathImage, start_only=True)
+            self.draw_robot(self.start, self.pathImage)
 
         # Create output video
         writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('a', 'v', 'c', '1'), 30,
-                                 (int(self.map.width / self.res), int(self.map.height / self.res)))
+                                 (int(self.map.width / self.i_res), int(self.map.height / self.i_res)))
         window_name = "Animation"
         for i in range(150):
             writer.write(self.frames[0])
@@ -289,8 +302,10 @@ class Robot:
             next_image = np.copy(self.baseImage)
             for i in range(len(path_points)):
                 next_image = np.copy(self.baseImage)
-                self.draw_robot_and_goal(path_points[i], next_image, rim=False)
-                for j in range(min(1 + int(self.step) // 5, 5)):
+                self.draw_goal(self.goal, next_image)
+                next_image[self.obstacleIndices] = self.colors["obstacle"]
+                self.draw_robot(path_points[i], next_image)
+                for j in range(8):
                     writer.write(next_image)
                     if self.play:
                         cv2.imshow(window_name, next_image)
@@ -317,11 +332,54 @@ class Robot:
         bool
             True if the point is on the goal, False otherwise
         """
-        result = sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
-        return result and (True if self.goal[2] is None else self.goal[2] == point[2])
+        return sqrt((self.goal[0] - point[0]) ** 2 + (self.goal[1] - point[1]) ** 2) <= self.goal_threshold
 
-    def next_position(self, rot, rpm1, rpm2):
-        return
+    def next_position(self, current_position, rpm_l, rpm_r):
+        """
+        Calculates the next position of a robot with a given position and wheel RPMs.
+
+        Parameters
+        ----------
+        current_position: tuple of float
+            Current location of the robot, in the form (y, x, theta)
+        rpm_l: float
+            RPM of left wheel
+        rpm_r: float
+            RPM of right wheel
+
+        Returns
+        -------
+        tuple of float
+            new location of the robot, along with distance traveled, in the form (y, x, theta, arc_length)
+
+        References
+        ----------
+        https://robotics.stackexchange.com/questions/1653/calculate-position-of-differential-drive-robot
+        """
+        # Robot's current y, x, and orientation
+        ry, rx, rt = current_position
+        omega_l = rpm_l * 2.0 * pi / 60.0
+        omega_r = rpm_r * 2.0 * pi / 60.0
+
+        # Check for straight line first (to handle infinite radius of curvature)
+        if abs(rpm_l - rpm_r) < 0.00001:
+            ny = ry + self.wr * omega_r * sin(rt) * self.dt
+            nx = rx + self.wr * omega_r * cos(rt) * self.dt
+            nt = rt
+            arc_length = self.wr * omega_r
+
+        else:
+            # Calculate new location for turn
+            dist_l = self.wr * omega_l * self.dt
+            dist_r = self.wr * omega_r * self.dt
+            dist_c = (dist_l + dist_r) / 2.0
+            cr = self.w_axis * (dist_r + dist_l) / (2.0 * dist_r - dist_l)
+            d_theta = (dist_r - dist_l) / self.w_axis
+            ny = ry - cr * (cos(d_theta + rt) - cos(rt))
+            nx = rx + cr * (sin(d_theta + rt) - sin(rt))
+            nt = (rt + d_theta) % (2.0 * pi)
+            arc_length = dist_c
+        return ny, nx, nt, arc_length
 
     def draw_goal(self, goal_pos, image):
         """
@@ -360,12 +418,12 @@ class Robot:
         cv2.circle(image, (int(rx / self.i_res), int(ry / self.i_res)), int(rad / self.i_res), (0, 0, 0),
                    thickness=(1 + int(0.01 / self.i_res)))
         rim = 1.2
-        s_arrow = [[int((rx+(rad*rim)*cos((rot*self.theta + 45)*pi/180)) / self.i_res),
-                    int((ry+(rad*rim)*sin((rot*self.theta + 45)*pi/180)) / self.i_res)],
-                   [int((rx+(rad*rim)*1.4*cos(rot*self.theta*pi/180)) / self.i_res),
-                    int((ry+(rad*rim)*1.4*sin(rot*self.theta*pi/180)) / self.i_res)],
-                   [int((rx+(rad*rim)*cos((rot*self.theta - 45)*pi/180)) / self.i_res),
-                    int((ry+(rad*rim)*sin((rot*self.theta - 45)*pi/180)) / self.i_res)]]
+        s_arrow = [[int((rx+(rad*rim)*cos(rot + pi/4)) / self.i_res),
+                    int((ry+(rad*rim)*sin(rot + pi/4)) / self.i_res)],
+                   [int((rx+(rad*rim)*1.4*cos(rot)) / self.i_res),
+                    int((ry+(rad*rim)*1.4*sin(rot)) / self.i_res)],
+                   [int((rx+(rad*rim)*cos(rot - pi/4)) / self.i_res),
+                    int((ry+(rad*rim)*sin(rot - pi/4)) / self.i_res)]]
         polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
         cv2.polylines(image, [polygon], False, self.colors["robot"], thickness=1)
 
@@ -401,9 +459,5 @@ def main(argv):
 
 
 if __name__ == '__main__':
+    count = 0
     main(sys.argv[1:])
-
-# TODO:  -----------------------------------------------------
-# TODO:  Define path obstruction tests
-# TODO:  Define new action set
-# TODO:  Update visuals
