@@ -46,7 +46,7 @@ class Robot:
         self.res = 0.05  # Resolution of matrix for tracking duplicate states
         self.i_res = 0.05  # Resolution for visualizations
         self.theta = 15  # Resolution of robot orientation for differentiation of action steps
-        self.dt = 0.5  # Time between actions
+        self.dt = 1.0  # Time between actions
         self.radius = 0.177  # Robot radius (see data sheet)
         self.clearance = 0.05  # 5 cm clearance, just in case
         self.w_axis = self.radius * 0.8  # Length of axis between wheels (assumed)
@@ -141,6 +141,7 @@ class Robot:
         blocked_pixels = np.array([[self.map.collision_point((i * self.i_res, j * self.i_res))
                                     for j in range(self.imageShape[1])]
                                    for i in range(self.imageShape[0])], dtype=np.uint8)
+        self.obstaclePixels = np.where(blocked_pixels)
         self.colors = {"free": (192, 192, 192),
                        "obstacle": (128, 128, 128),
                        "robot": (0, 0, 255),
@@ -185,7 +186,7 @@ class Robot:
 
             # See if goal cell has been reached (with threshold condition)
             if self.on_goal(cell):
-                self.lastPosition = (cell[0], cell[1], cell_theta_norm)
+                self.lastPosition = cell
                 self.openList = []
 
             # Expand cell
@@ -257,12 +258,12 @@ class Robot:
             sys.stdout.write("\n\nGoal reached!\n")
             goal_y = int(self.lastPosition[0] / self.res)
             goal_x = int(self.lastPosition[1] / self.res)
-            goal_r = self.lastPosition[2]
+            goal_r = int(self.lastPosition[2] * 180.0 / pi) // self.theta
             current_cell = (goal_y, goal_x, goal_r)
             next_cell = tuple(self.parentGrid[current_cell])
-            path_points = [(int(self.lastPosition[0]), int(self.lastPosition[1]), self.lastPosition[2])]
+            path_points = [(self.lastPosition[0], self.lastPosition[1], self.lastPosition[2])]
             self.draw_goal(self.goal, self.pathImage)
-            self.pathImage[self.obstacleIndices] = self.colors["obstacle"]
+            self.pathImage[self.obstaclePixels] = self.colors["obstacle"]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (int(current_cell[1] * self.res / self.i_res),
                                           int(current_cell[0] * self.res / self.i_res)),
@@ -297,13 +298,14 @@ class Robot:
         if self.play:
             cv2.imshow(window_name, self.pathImage if self.success else self.frames[len(self.frames) - 2])
             cv2.waitKey(5000)
+
         # Follow the path
         if self.success:
             next_image = np.copy(self.baseImage)
             for i in range(len(path_points)):
                 next_image = np.copy(self.baseImage)
                 self.draw_goal(self.goal, next_image)
-                next_image[self.obstacleIndices] = self.colors["obstacle"]
+                next_image[self.obstaclePixels] = self.colors["obstacle"]
                 self.draw_robot(path_points[i], next_image)
                 for j in range(8):
                     writer.write(next_image)
