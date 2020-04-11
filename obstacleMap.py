@@ -136,9 +136,6 @@ class ObstacleMap:
                     return True
         return False
 
-    def is_blocking(self):
-        return False
-
 
 if __name__ == '__main__':
     ObstacleMap(2)

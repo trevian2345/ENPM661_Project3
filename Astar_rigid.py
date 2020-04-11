@@ -28,7 +28,7 @@ class Robot:
     i_res: float
         Resolution of images for generating visualization
     """
-    def __init__(self, start, goal, rpm1, rpm2, hw=None, reduced=False, play=False):
+    def __init__(self, start, goal, rpm1, rpm2, clearance=None, hw=None, reduced=False, play=False):
         """
         Initialization of the robot.
 
@@ -48,11 +48,13 @@ class Robot:
         self.theta = 30  # Resolution of robot orientation for differentiation of action steps
         self.dt = 1.0  # Time between actions
         self.radius = 0.177  # Robot radius (see data sheet)
-        self.clearance = 0.08  # 8 cm clearance, just in case
         self.w_axis = self.radius * 0.8  # Length of axis between wheels (assumed)
         self.wr = 0.038  # Wheel radius, in meters (see data sheet)
         self.rpm1 = rpm1
         self.rpm2 = rpm2
+        self.clearance = clearance if clearance is not None else 0.08  # 8 cm clearance, just in case
+        if self.clearance < 0:
+            sys.stdout.write("\nClearance is negative.  Exiting...\n")
         self.map = ObstacleMap(self.radius + self.clearance)
 
         # Handle RPM arguments
@@ -80,7 +82,7 @@ class Robot:
         self.success = True
 
         # Goal threshold:  minimum distance that can be covered in one action step
-        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 0.5
+        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 0.2
 
         # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
         self.hw = hw if hw is not None else 1.0
@@ -91,6 +93,7 @@ class Robot:
                          (start[0], start[1], (int(360 - self.start[2] * self.theta) % 360)))
         sys.stdout.write("\n    Robot goal:  x = %.2f, y = %.2f" % (goal[0], goal[1]))
         sys.stdout.write("\n    Wheel RPMs:  %.2f and %.2f" % (self.rpm1, self.rpm2))
+        sys.stdout.write("\n    Clearance:  %.2f meters" % self.clearance)
         sys.stdout.write("\n    Heuristic weight:  %.2f\n" % self.hw)
 
         # Check to see if start and goal cells lie within map boundaries
@@ -201,7 +204,10 @@ class Robot:
                     # Check for map boundaries
                     if 0.0 <= ny < self.map.height and 0.0 <= nx < self.map.width:
                         # Check for obstacles
-                        if not self.map.collision_circle((ny, nx, self.radius + self.clearance)):
+                        collision = self.map.collision_circle((ny, nx, self.radius + self.clearance))
+                        collision = collision or self.map.collision_circle(((ny + cell[0]) / 2.0, (nx + cell[1]) / 2.0,
+                                                                            self.radius + self.clearance * 1.5))
+                        if not collision:
                             # Check whether cell has been explored
                             if not self.closeGrid[int(ny / self.res), int(nx / self.res), theta_norm]:
                                 # Check if cell is already pending exploration
@@ -343,7 +349,7 @@ class Robot:
                 self.draw_goal(self.goal, next_image)
                 next_image[self.obstaclePixels] = self.colors["obstacle"]
                 self.draw_robot(path_points[i], next_image)
-                for j in range(2):
+                for j in range(1):
                     writer.write(next_image)
                     if self.play:
                         cv2.imshow(window_name, next_image)
@@ -489,11 +495,13 @@ def main(argv):
     parser.add_argument('goal_y', type=float, help='Y-coordinate of goal node of the robot')
     parser.add_argument('rpm1', type=float, help='Low RPM')
     parser.add_argument('rpm2', type=float, help='High RPM')
+    parser.add_argument('--clearance', type=float, help='Robot clearance')
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
     parser.add_argument('--reduced', action="store_true",
                         help='Use a reduced set of actions (<RPM1, RPM2>; <RPM2, RPM1>; <RPM2, RPM2>)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
+    parser.add_argument('--text', action="store_true", help="Output positions and velocities in a text file")
     args = parser.parse_args(argv)
 
     sx = args.start_x
@@ -503,12 +511,13 @@ def main(argv):
     gy = args.goal_y
     rpm1 = args.rpm1
     rpm2 = args.rpm2
+    clearance = args.clearance
     h_weight = args.hw
     reduced = args.reduced
     p = args.play
     start_pos = (sx, sy, st)
     goal_pos = (gx, gy)
-    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, reduced=reduced, play=p)
+    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, reduced=reduced, play=p, clearance=clearance)
 
 
 if __name__ == '__main__':
