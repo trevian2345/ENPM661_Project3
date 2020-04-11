@@ -44,7 +44,7 @@ class Robot:
             Whether to play using OpenCV's imshow()
         """
         self.res = 0.05  # Resolution of matrix for tracking duplicate states
-        self.i_res = 0.05  # Resolution for visualizations
+        self.i_res = 0.025  # Resolution for visualizations
         self.theta = 15  # Resolution of robot orientation for differentiation of action steps
         self.dt = 1.0  # Time between actions
         self.radius = 0.177  # Robot radius (see data sheet)
@@ -64,11 +64,11 @@ class Robot:
             exit(0)
 
         # Structure of self.actions:  [rpm of left wheel, rpm of right wheel]
-        self.actions = [#[0, rpm1],
-                        #[rpm1, 0],
-                        #[rpm1, rpm1],
-                        #[0, rpm2],
-                        #[rpm2, 0],
+        self.actions = [[0, rpm1],
+                        [rpm1, 0],
+                        [rpm1, rpm1],
+                        [0, rpm2],
+                        [rpm2, 0],
                         [rpm2, rpm2],
                         [rpm1, rpm2],
                         [rpm2, rpm1]]
@@ -80,7 +80,7 @@ class Robot:
         self.success = True
 
         # Goal threshold:  minimum distance that can be covered in one action step
-        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 1.1
+        self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 0.5
 
         # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
         self.hw = hw if hw is not None else 2.0
