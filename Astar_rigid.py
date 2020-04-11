@@ -28,7 +28,7 @@ class Robot:
     i_res: float
         Resolution of images for generating visualization
     """
-    def __init__(self, start, goal, rpm1, rpm2, hw=None, play=False):
+    def __init__(self, start, goal, rpm1, rpm2, hw=None, reduced=False, play=False):
         """
         Initialization of the robot.
 
@@ -48,7 +48,7 @@ class Robot:
         self.theta = 15  # Resolution of robot orientation for differentiation of action steps
         self.dt = 1.0  # Time between actions
         self.radius = 0.177  # Robot radius (see data sheet)
-        self.clearance = 0.05  # 5 cm clearance, just in case
+        self.clearance = 0.08  # 8 cm clearance, just in case
         self.w_axis = self.radius * 0.8  # Length of axis between wheels (assumed)
         self.wr = 0.038  # Wheel radius, in meters (see data sheet)
         self.rpm1 = rpm1
@@ -71,7 +71,7 @@ class Robot:
                         [rpm2, 0],
                         [rpm2, rpm2],
                         [rpm1, rpm2],
-                        [rpm2, rpm1]]
+                        [rpm2, rpm1]][(5 if reduced else 0):]
 
         # Starting node in tuple form (y, x, orientation)
         self.start = (self.map.height - start[1], start[0], (-start[2] * pi / 180.0) % (2.0 * pi))
@@ -81,6 +81,7 @@ class Robot:
 
         # Goal threshold:  minimum distance that can be covered in one action step
         self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 0.5
+        print("self.goal_threshold:", self.goal_threshold)
 
         # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
         self.hw = hw if hw is not None else 2.0
@@ -163,7 +164,7 @@ class Robot:
         Solves the puzzle.
         """
         # Initialize the open list/grid with the start cell
-        self.openList = [[self.start, 0]]  # [point, cost]
+        self.openList = [[self.start, 0, -1]]  # [point, cost, arc]
         self.openGrid[int(self.start[0] / self.res), int(self.start[1] / self.res),
                       int(self.start[2] * 180.0 / pi) // self.theta] = 1
         path_points = []
@@ -182,6 +183,7 @@ class Robot:
             index = int(np.argmin(cost_list, axis=0))
             cell = self.openList[index][0]
             cost = self.openList[index][1]
+            arc_to_draw = self.openList[index][2]
             cell_theta_norm = int(cell[2] * 180.0 / pi) // self.theta
 
             # See if goal cell has been reached (with threshold condition)
@@ -193,18 +195,18 @@ class Robot:
             else:
                 for a in range(len(self.actions)):
                     next_cell = self.next_position(cell, self.actions[a][0], self.actions[a][1])
-                    ny, nx, nt, arc_length = next_cell
+                    ny, nx, nt, arc_length, arc_center = next_cell
                     theta_norm = int(nt * 180.0 / pi) // self.theta
 
                     # Check for map boundaries
                     if 0.0 <= ny < self.map.height and 0.0 <= nx < self.map.width:
                         # Check for obstacles
-                        if not self.map.collision_circle((ny, nx, self.radius)):
+                        if not self.map.collision_circle((ny, nx, self.radius + self.clearance)):
                             # Check whether cell has been explored
                             if not self.closeGrid[int(ny / self.res), int(nx / self.res), theta_norm]:
                                 # Check if cell is already pending exploration
                                 if not self.openGrid[int(ny / self.res), int(nx / self.res), theta_norm]:
-                                    self.openList.append([(ny, nx, nt), cost + arc_length])
+                                    self.openList.append([(ny, nx, nt), cost + arc_length, arc_center])
                                     parent = [int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm]
                                     self.parentGrid[int(ny / self.res), int(nx / self.res), theta_norm] = parent
                                     action = [cell[0], cell[1], cell[2]]
@@ -220,16 +222,24 @@ class Robot:
             self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm] = 1
 
             # Update visualization
-            line_color = np.sum(self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res)])
-            line_color = (255, int(255 - (1.0 - line_color / (360 / self.theta)) * 192), 64)
             if explored_count > 0:
+                line_color = np.sum(self.closeGrid[int(cell[0] / self.res), int(cell[1] / self.res)])
+                line_color = (255, int(255 - (1.0 - line_color / (360 / self.theta)) * 192), 64)
                 parent_cell = tuple(self.parentGrid[int(cell[0] / self.res), int(cell[1] / self.res),
                                                     cell_theta_norm][:2])
                 parent_cell = (int(parent_cell[1] * self.res / self.i_res), int(parent_cell[0] * self.res / self.i_res))
-                # TODO:  Draw an arc instead of a line.
-                cv2.line(self.pathImage, (int(cell[1] / self.i_res), int(cell[0] / self.i_res)),
-                         parent_cell, line_color)
-            if explored_count % 10 == 0 or (len(self.openList) == 0 and self.success):  # Display every 10 frames
+
+                # Draw a line or an arc from the parent point to the current point
+                if arc_to_draw == -1:
+                    cv2.line(self.pathImage, (int(cell[1] / self.i_res), int(cell[0] / self.i_res)),
+                             parent_cell, line_color)
+                else:
+                    arc_y, arc_x, arc_r, arc_th1, arc_th2 = arc_to_draw
+                    if arc_th2 < arc_th1:
+                        arc_th2 += 360
+                    cv2.ellipse(self.pathImage, (int(arc_x), int(arc_y)), (int(arc_r), int(arc_r)), 0,
+                                arc_th1, arc_th2, line_color)
+            if explored_count % 5 == 0 or (len(self.openList) == 0 and self.success):  # Display every 5 frames
                 self.frames.append(np.copy(self.pathImage))
 
             explored_count += 1
@@ -263,13 +273,11 @@ class Robot:
             next_cell = tuple(self.parentGrid[current_cell])
             path_points = [(self.lastPosition[0], self.lastPosition[1], self.lastPosition[2])]
             self.draw_goal(self.goal, self.pathImage)
-            self.pathImage[self.obstaclePixels] = self.colors["obstacle"]
             while sum(next_cell) >= 0:
                 cv2.line(self.pathImage, (int(current_cell[1] * self.res / self.i_res),
                                           int(current_cell[0] * self.res / self.i_res)),
                          (int(next_cell[1] * self.res / self.i_res),
-                          int(next_cell[0] * self.res / self.i_res)), self.colors["path"],
-                         thickness=int(1 + 2 * self.radius / self.res))
+                          int(next_cell[0] * self.res / self.i_res)), self.colors["path"], thickness=2)
                 path_points.append(self.actionGrid[current_cell])
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
@@ -352,7 +360,8 @@ class Robot:
         Returns
         -------
         tuple of float
-            new location of the robot, along with distance traveled, in the form (y, x, theta, arc_length)
+            New location of the robot, along with distance traveled and the center of the circle of curvature,
+            in the form (y, x, theta, arc_length, arc_center)
 
         References
         ----------
@@ -369,19 +378,29 @@ class Robot:
             nx = rx + self.wr * omega_r * cos(rt) * self.dt
             nt = rt
             arc_length = self.wr * omega_r
+            arc_center = -1
 
         else:
             # Calculate new location for turn
             dist_l = self.wr * omega_l * self.dt
             dist_r = self.wr * omega_r * self.dt
             dist_c = (dist_l + dist_r) / 2.0
-            cr = self.w_axis * (dist_r + dist_l) / (2.0 * dist_r - dist_l)
+            cr = self.w_axis * (dist_r + dist_l) / (2.0 * (dist_r - dist_l))
             d_theta = (dist_r - dist_l) / self.w_axis
             ny = ry - cr * (cos(d_theta + rt) - cos(rt))
             nx = rx + cr * (sin(d_theta + rt) - sin(rt))
             nt = (rt + d_theta) % (2.0 * pi)
             arc_length = dist_c
-        return ny, nx, nt, arc_length
+
+            # Calculate arc center, for use in drawing curves
+            turn = 1.0 if omega_r > omega_l else -1.0
+            cy = ry + cr * sin(rt + pi / 2.0)
+            cx = rx + cr * cos(rt + pi / 2.0)
+            th_1 = int(atan2(ry - cy, rx - cx) * 180.0 / pi) % 360
+            th_2 = int(atan2(ny - cy, nx - cx) * 180.0 / pi) % 360
+            arc_center = (cy / self.i_res, cx / self.i_res, abs(cr / self.i_res),
+                          th_1 if turn > 0 else th_2, th_1 if turn < 0 else th_2)
+        return ny, nx, nt, arc_length, arc_center
 
     def draw_goal(self, goal_pos, image):
         """
@@ -443,6 +462,8 @@ def main(argv):
     parser.add_argument('rpm2', type=float, help='High RPM')
     parser.add_argument('--hw', type=float, help='Heuristic weight.  Defaults to 2.0 when omitted. '
                                                  '(Set to 1.0 for optimal path or 0.0 for Dijkstra)')
+    parser.add_argument('--reduced', action="store_true",
+                        help='Use a reduced set of actions (<RPM1, RPM2>; <RPM2, RPM1>; <RPM2, RPM2>)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
     args = parser.parse_args(argv)
 
@@ -454,10 +475,11 @@ def main(argv):
     rpm1 = args.rpm1
     rpm2 = args.rpm2
     h_weight = args.hw
+    reduced = args.reduced
     p = args.play
     start_pos = (sx, sy, st)
     goal_pos = (gx, gy)
-    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, play=p)
+    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, reduced=reduced, play=p)
 
 
 if __name__ == '__main__':
