@@ -43,9 +43,9 @@ class Robot:
         play: bool, optional
             Whether to play using OpenCV's imshow()
         """
-        self.res = 0.05  # Resolution of matrix for tracking duplicate states
+        self.res = 0.125  # Resolution of matrix for tracking duplicate states
         self.i_res = 0.025  # Resolution for visualizations
-        self.theta = 15  # Resolution of robot orientation for differentiation of action steps
+        self.theta = 30  # Resolution of robot orientation for differentiation of action steps
         self.dt = 1.0  # Time between actions
         self.radius = 0.177  # Robot radius (see data sheet)
         self.clearance = 0.08  # 8 cm clearance, just in case
@@ -81,10 +81,9 @@ class Robot:
 
         # Goal threshold:  minimum distance that can be covered in one action step
         self.goal_threshold = min(rpm1, rpm2) * 2.0 * pi / 60.0 * self.dt * self.wr * 0.5
-        print("self.goal_threshold:", self.goal_threshold)
 
         # Heuristic weight (set to <= 1.0 for optimal path or 0.0 for Dijkstra)
-        self.hw = hw if hw is not None else 2.0
+        self.hw = hw if hw is not None else 1.0
 
         # Output arguments
         sys.stdout.write("\nThe following parameters have been provided:")
@@ -126,7 +125,8 @@ class Robot:
         self.parentGrid = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1],
                                     self.configSpace.shape[2], 3), dtype=np.int) - 1
         # Grid containing movement policy
-        self.actionGrid = np.zeros_like(self.parentGrid, np.float32)
+        self.actionGrid = np.zeros((self.configSpace.shape[0], self.configSpace.shape[1],
+                                    self.configSpace.shape[2], 9), dtype=np.float32)
 
         # State matrices
         sys.stdout.write("\nCreating state space matrices and base illustrations...")
@@ -195,7 +195,7 @@ class Robot:
             else:
                 for a in range(len(self.actions)):
                     next_cell = self.next_position(cell, self.actions[a][0], self.actions[a][1])
-                    ny, nx, nt, arc_length, arc_center = next_cell
+                    ny, nx, nt, arc_length, arc_center, turn = next_cell
                     theta_norm = int(nt * 180.0 / pi) // self.theta
 
                     # Check for map boundaries
@@ -210,6 +210,11 @@ class Robot:
                                     parent = [int(cell[0] / self.res), int(cell[1] / self.res), cell_theta_norm]
                                     self.parentGrid[int(ny / self.res), int(nx / self.res), theta_norm] = parent
                                     action = [cell[0], cell[1], cell[2]]
+                                    if arc_center == -1:
+                                        action.extend([-1] * (self.actionGrid.shape[3] - len(action)))
+                                    else:
+                                        action.extend(list(arc_center))
+                                        action.append(turn)
                                     self.actionGrid[int(ny / self.res), int(nx / self.res), theta_norm] = action
                                     self.openGrid[int(ny / self.res), int(nx / self.res), theta_norm] = 1
 
@@ -270,15 +275,38 @@ class Robot:
             goal_x = int(self.lastPosition[1] / self.res)
             goal_r = int(self.lastPosition[2] * 180.0 / pi) // self.theta
             current_cell = (goal_y, goal_x, goal_r)
+            current_theta = self.lastPosition[2]
+            current_actual = self.lastPosition
             next_cell = tuple(self.parentGrid[current_cell])
             path_points = [(self.lastPosition[0], self.lastPosition[1], self.lastPosition[2])]
             self.draw_goal(self.goal, self.pathImage)
+            cell_split = 10
             while sum(next_cell) >= 0:
-                cv2.line(self.pathImage, (int(current_cell[1] * self.res / self.i_res),
-                                          int(current_cell[0] * self.res / self.i_res)),
-                         (int(next_cell[1] * self.res / self.i_res),
-                          int(next_cell[0] * self.res / self.i_res)), self.colors["path"], thickness=2)
-                path_points.append(self.actionGrid[current_cell])
+                if current_cell[2] == next_cell[2]:
+                    cv2.line(self.pathImage, (int(current_cell[1] * self.res / self.i_res),
+                                              int(current_cell[0] * self.res / self.i_res)),
+                             (int(next_cell[1] * self.res / self.i_res),
+                              int(next_cell[0] * self.res / self.i_res)), self.colors["path"], thickness=4)
+                    mid_y = np.linspace(current_actual[0], self.actionGrid[current_cell][0], cell_split,
+                                        endpoint=False)
+                    mid_x = np.linspace(current_actual[1], self.actionGrid[current_cell][1], cell_split,
+                                        endpoint=False)
+                    for i in range(cell_split):
+                        path_points.append([mid_y[i], mid_x[i], current_theta])
+                else:
+                    cy, cx, cr, th1, th2, turn = self.actionGrid[current_cell][3:]
+                    if th2 < th1:
+                        th2 += 360
+                    cv2.ellipse(self.pathImage, (int(cx), int(cy)), (int(cr), int(cr)), 0,
+                                th1, th2, self.colors["path"], thickness=4)
+                    mid_theta = np.linspace(th2, th1, cell_split) * pi / 180.0
+                    for i in range(len(mid_theta)):
+                        k = (i if turn > 0 else (len(mid_theta) - i - 1))
+                        path_points.append([(cy + cr*sin(mid_theta[k])) * self.i_res,
+                                            (cx + cr*cos(mid_theta[k])) * self.i_res,
+                                            mid_theta[k] + pi/2.0 * turn])
+                current_theta = self.actionGrid[current_cell][2]
+                current_actual = self.actionGrid[current_cell][:3]
                 current_cell = next_cell
                 next_cell = tuple(self.parentGrid[next_cell])
             path_points.reverse()
@@ -287,7 +315,7 @@ class Robot:
 
         # Create output video
         writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('a', 'v', 'c', '1'), 30,
-                                 (int(self.map.width / self.i_res), int(self.map.height / self.i_res)))
+                                 (self.pathImage.shape[1], self.pathImage.shape[0]))
         window_name = "Animation"
         for i in range(150):
             writer.write(self.frames[0])
@@ -315,7 +343,7 @@ class Robot:
                 self.draw_goal(self.goal, next_image)
                 next_image[self.obstaclePixels] = self.colors["obstacle"]
                 self.draw_robot(path_points[i], next_image)
-                for j in range(8):
+                for j in range(2):
                     writer.write(next_image)
                     if self.play:
                         cv2.imshow(window_name, next_image)
@@ -379,6 +407,7 @@ class Robot:
             nt = rt
             arc_length = self.wr * omega_r
             arc_center = -1
+            turn = 0.0
 
         else:
             # Calculate new location for turn
@@ -400,7 +429,7 @@ class Robot:
             th_2 = int(atan2(ny - cy, nx - cx) * 180.0 / pi) % 360
             arc_center = (cy / self.i_res, cx / self.i_res, abs(cr / self.i_res),
                           th_1 if turn > 0 else th_2, th_1 if turn < 0 else th_2)
-        return ny, nx, nt, arc_length, arc_center
+        return ny, nx, nt, arc_length, arc_center, turn
 
     def draw_goal(self, goal_pos, image):
         """
