@@ -2,7 +2,6 @@ from math import *
 import numpy as np
 import cv2
 import sys
-import io
 import argparse
 from datetime import datetime
 from obstacleMap import ObstacleMap
@@ -29,7 +28,7 @@ class Robot:
     i_res: float
         Resolution of images for generating visualization
     """
-    def __init__(self, start, goal, rpm1, rpm2, clearance=None, hw=None, reduced=False, play=False, text=False):
+    def __init__(self, start, goal, rpm1, rpm2, clearance=None, hw=None, reduced=False, play=False):
         """
         Initialization of the robot.
 
@@ -161,8 +160,8 @@ class Robot:
         self.frames = [np.copy(self.pathImage)]
         self.play = play
 
-        # Text file (for output of positions and velocities)
-        self.outputText = "positions.txt" if text else None
+        # Array for velocities
+        self.velocityArray = []
 
         # Find a path
         self.solve()
@@ -324,18 +323,14 @@ class Robot:
             self.frames.append(np.copy(self.pathImage))
             self.draw_robot(self.start, self.pathImage)
 
-        # Create output text file
-        if self.outputText is not None:
-            output_file = io.open(self.outputText, mode="wt")
-            output_file.write("[")
-            for i in range(len(path_points) - 1):
-                py, px, pr = path_points[i]
-                ny, nx, nr = path_points[i+1]
-                vy = (ny - py) / self.dt
-                vx = (nx - px) / self.dt
-                vr = (nr - pr) / self.dt
-                output_file.write("[%6.3f %6.3f %6.3f]%s" % (vx, vy, vr, "\n" if i < len(path_points) - 2 else "]"))
-            output_file.close()
+        # Create array of velocities
+        for i in range(len(path_points) - 1):
+            py, px, pr = path_points[i]
+            ny, nx, nr = path_points[i+1]
+            vy = (ny - py) / self.dt
+            vx = (nx - px) / self.dt
+            vr = (nr - pr) / self.dt
+            self.velocityArray.append([vx, vy, vr])
 
         # Create output video
         writer = cv2.VideoWriter('FinalAnimation.mp4', cv2.VideoWriter_fourcc('a', 'v', 'c', '1'), 30,
@@ -501,6 +496,9 @@ class Robot:
         polygon = np.array(s_arrow, np.int32).reshape((-1, 1, 2))
         cv2.polylines(image, [polygon], False, self.colors["robot"], thickness=1)
 
+    def get_velocities(self):
+        return self.velocityArray
+
 
 def main(argv):
     parser = argparse.ArgumentParser(
@@ -519,7 +517,6 @@ def main(argv):
     parser.add_argument('--reduced', action="store_true",
                         help='Use a reduced set of actions (<RPM1, RPM2>; <RPM2, RPM1>; <RPM2, RPM2>)')
     parser.add_argument('--play', action="store_true", help="Play using opencv's imshow")
-    parser.add_argument('--text', action="store_true", help="Output positions and velocities in a text file")
     args = parser.parse_args(argv)
 
     sx = args.start_x
@@ -533,10 +530,9 @@ def main(argv):
     h_weight = args.hw
     reduced = args.reduced
     p = args.play
-    tx = args.text
     start_pos = (sx, sy, st)
     goal_pos = (gx, gy)
-    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, reduced=reduced, play=p, clearance=clearance, text=tx)
+    Robot(start_pos, goal_pos, rpm1, rpm2, hw=h_weight, reduced=reduced, play=p, clearance=clearance)
 
 
 if __name__ == '__main__':

@@ -21,7 +21,6 @@ The solver uses the following Python libraries:
 | math      | To use the mathematical functions                                 |
 | argparse  | Parsing input arguments to the program                            |
 | datetime  | To get the runtime of the project		                            |
-| io        | To output path information     		                            |
 
 --------------------------------------
 
