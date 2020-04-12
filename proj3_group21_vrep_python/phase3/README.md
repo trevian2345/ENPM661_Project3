@@ -1,4 +1,4 @@
-# ENPM 661 - A* Implementation on Rigid Robot - Project 3 (Phase-2)  - Group 8
+# ENPM 661 - A* Implementation with Non-Holonomic Constraints - Project 3 (Phase 3)  - Group 21
 
 ### Description
 
