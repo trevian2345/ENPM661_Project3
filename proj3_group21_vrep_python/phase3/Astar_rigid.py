@@ -327,13 +327,14 @@ class Robot:
         # Create output text file
         if self.outputText is not None:
             output_file = io.open(self.outputText, mode="wt")
+            output_file.write("[")
             for i in range(len(path_points) - 1):
                 py, px, pr = path_points[i]
                 ny, nx, nr = path_points[i+1]
                 vy = (ny - py) / self.dt
                 vx = (nx - px) / self.dt
                 vr = (nr - pr) / self.dt
-                output_file.write("%6.3f %6.3f %6.3f\n" % (vx, vy, vr))
+                output_file.write("[%6.3f %6.3f %6.3f]%s" % (vx, vy, vr, "\n" if i < len(path_points) - 2 else "]"))
             output_file.close()
 
         # Create output video

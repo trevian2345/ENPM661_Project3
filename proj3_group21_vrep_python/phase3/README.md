@@ -68,6 +68,10 @@ Some examples of valid commands (the top one used for the deliverable):
         python3 -u Astar_rigid.py 5 3 180 5 7 270 300 --hw 1.0
         
         python3 -u Astar_rigid.py 8 1 180 0.5 9.5 270 300 --clearance 0.05
+        
+        python3 -u Astar_rigid.py 0.5 1.0 60 5.0 1.0 270 300  # For phase 4 video 1
+        
+        python3 -u Astar_rigid.py 1.0 0.5 60 9.5 9.5 270 300  # For phase 4 video 2
 
 --------------------------------------
 
@@ -83,7 +87,7 @@ from the initial to the goal point.
 
 To produce our video submission, we used the following command:
 
-        python3 -u Astar_rigid.py 0.5 0.5 60 9.5 9.5 270 300
+        python3 -u Astar_rigid.py 1.0 0.5 60 9.5 9.5 270 300
 
 ### Github
 
