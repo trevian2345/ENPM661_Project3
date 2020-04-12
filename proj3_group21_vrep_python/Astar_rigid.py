@@ -327,15 +327,13 @@ class Robot:
         # Create output text file
         if self.outputText is not None:
             output_file = io.open(self.outputText, mode="wt")
-            output_file.write("Time delta:  %f seconds\n" % self.dt)
             for i in range(len(path_points) - 1):
                 py, px, pr = path_points[i]
                 ny, nx, nr = path_points[i+1]
                 vy = (ny - py) / self.dt
                 vx = (nx - px) / self.dt
                 vr = (nr - pr) / self.dt
-                output_file.write("vx = %6.3f;  vy = %6.3f;  vr = %6.3f;  x = %5.3f;  y = %5.3f;  r = %d\n" %
-                                  (vx, vy, vr, px, py, int(pr * 180.0 / pi) % 360))
+                output_file.write("%6.3f %6.3f %6.3f\n" % (vx, vy, vr))
             output_file.close()
 
         # Create output video
