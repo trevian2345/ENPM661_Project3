@@ -92,7 +92,7 @@ class Robot:
         # Output arguments
         sys.stdout.write("\nThe following parameters have been provided:")
         sys.stdout.write("\n    Robot start:  x = %.2f, y = %.2f, theta = %d degrees" %
-                         (start[0], start[1], (int(360 - self.start[2] * self.theta) % 360)))
+                         (start[0], start[1], (int(-self.start[2] * 180.0 / pi) % 360)))
         sys.stdout.write("\n    Robot goal:  x = %.2f, y = %.2f" % (goal[0], goal[1]))
         sys.stdout.write("\n    Wheel RPMs:  %.2f and %.2f" % (self.rpm1, self.rpm2))
         sys.stdout.write("\n    Clearance:  %.2f meters" % self.clearance)
