@@ -373,7 +373,8 @@ class Robot:
                 cv2.imshow(window_name, next_image)
                 cv2.waitKey(500)
         writer.release()
-        cv2.destroyWindow(window_name)
+        if self.play:
+            cv2.destroyWindow(window_name)
 
     def on_goal(self, point):
         """
